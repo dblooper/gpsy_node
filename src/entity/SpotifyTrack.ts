@@ -13,6 +13,15 @@ export class SpotifyTrack {
     author: String;
 
     @Column()
+    authorId: String;
+
+    @Column()
+    album: String;
+
+    @Column()
+    albumId: String;
+
+    @Column()
     @CreateDateColumn()
     insertDate: Date;
 }

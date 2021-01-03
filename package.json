@@ -3,14 +3,22 @@
    "version": "0.0.1",
    "description": "Awesome project developed with TypeORM.",
    "devDependencies": {
+      "@types/chai": "^4.2.14",
+      "@types/mocha": "^8.2.0",
       "@types/node": "^8.0.29",
       "@types/spotify-web-api-node": "^4.0.2",
-      "ts-node": "3.3.0",
-      "typescript": "3.3.3333"
+      "chai": "^4.2.0",
+      "mocha": "^8.2.1",
+      "nyc": "^15.1.0",
+      "ts-node": "^3.3.0",
+      "typescript": "^3.3.3333"
    },
    "dependencies": {
       "body-parser": "^1.18.1",
+      "dotenv": "^8.2.0",
       "express": "^4.15.4",
+      "moment": "^2.29.1",
+      "moments": "0.0.2",
       "mysql": "^2.14.1",
       "nodemon": "^2.0.6",
       "reflect-metadata": "^0.1.10",
@@ -18,6 +26,8 @@
       "typeorm": "0.2.26"
    },
    "scripts": {
-      "start": "nodemon src/index.ts"
+      "start": "nodemon src/index.ts",
+      "test": "mocha -r ts-node/register tests/**/*.test.ts",
+      "coverage": "nyc -r lcov -e .ts -x \"*.test.ts\" npm run test"
    }
 }
