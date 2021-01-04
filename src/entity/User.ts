@@ -1,15 +1,22 @@
-import {Entity, PrimaryGeneratedColumn, Column, PrimaryColumn, CreateDateColumn} from "typeorm";
+import {Entity, PrimaryGeneratedColumn, Column, PrimaryColumn, CreateDateColumn, Unique} from "typeorm";
 
 @Entity()
+@Unique(['email'])
 export class User {
 
     @PrimaryColumn()
-    id: String;
+    login: string;
 
     @Column()
+    password:string
+
+    @Column({default: null})
+    id: string;
+
+    @Column({default: null})
     email: string;
 
-    @Column()
+    @Column({default: null})
     name: string;
 
     @Column({default: 0})
@@ -18,4 +25,7 @@ export class User {
     @Column()
     @CreateDateColumn()
     registerDate: Date;
+
+    @Column({default: null})
+    spotifyRefreshToken: string
 }
