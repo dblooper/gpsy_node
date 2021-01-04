@@ -12,7 +12,7 @@ export class User {
     @Column()
     name: string;
 
-    @Column()
+    @Column({default: 0})
     age: number;
 
     @Column()

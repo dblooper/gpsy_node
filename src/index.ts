@@ -94,35 +94,26 @@ createConnection().then(async connection => {
         spotifyApi.setAccessToken(access_token);
         spotifyApi.setRefreshToken(refresh_token);
 
-        console.log('access_token:', access_token);
-        console.log('refresh_token:', refresh_token);
-        console.log(spotifyApi.getCredentials())
-        console.log(
-            `Sucessfully retreived access token. Expires in ${expires_in} s.`
-        );
-
         setInterval(async () => {
             const data = await spotifyApi.refreshAccessToken();
             const access_token = data.body['access_token'];
-
-            console.log('The access token has been refreshed!');
-            console.log('access_token:', access_token);
+            //console.log('access_token:', access_token);
             spotifyApi.setAccessToken(access_token);
+            console.log('The access token has been refreshed!');
         }, expires_in / 2 * 1000);
         
-        //Start retrieving track listen data from spotify and save it to db
+//Start retrieving track listen data from spotify and save it to db
         setInterval(async () => {
             try {
                 let recentTracks = await spotifyApi.getMyRecentlyPlayedTracks({
                     limit : 50
                 });
                 let me = await spotifyApi.getMe();
-                // console.log(JSON.stringify(recentTracks, null, 1))
-                console.log(`Recently played tracks for ${me.body.display_name} : ${
-                    JSON.stringify(recentTracks.body.items.map(item => {return {name: item.track.name,
-                                                                id: item.track.id,
-                                                                playedAt: item.played_at}}), null, 1)
-                }`);
+                // console.log(`Recently played tracks for ${me.body.display_name} : ${
+                //     JSON.stringify(recentTracks.body.items.map(item => {return {name: item.track.name,
+                //                                                 id: item.track.id,
+                //                                                 playedAt: item.played_at}}), null, 1)
+                // }`);
                 let user: User = await userRepository.findOne({email: me.body.email});
                 if(user) {
                     let mappedTracks = [];
@@ -153,13 +144,17 @@ createConnection().then(async connection => {
                     if(mappedTracks) {
                         await recentTracksRepository.save(mappedTracks);
                     }
+                    console.log(`Recently played tracks for ${me.body.display_name} fetched successfully`);
                 } else {
-                    
+                    let message = `User does not exists ${me.body.email}`
+                    console.log(message);
+                    res.json(new ApiResponse(new ApiError(51, message)));
+                    return;
                 }
             } catch(err) {
                 console.log('Something went wrong when retrieving recently played', err);
             };
-        }, 20000);
+        }, 1800000);
 
         let me = null;
         try {
@@ -184,9 +179,11 @@ createConnection().then(async connection => {
                 id: me.body.id,
                 email: me.body.email,
                 name: me.body.display_name,
-                age: 18
             })
         }
+        console.log(
+            `Sucessfully retreived access token for ${me.body.email}. Expires in ${expires_in} s.`
+        );
         res.json(new ApiResponse(new ApiSuccess(`Success authorization to ${me.body.display_name}! You can now close the window`)));
         })
         .catch(error => {
@@ -219,7 +216,43 @@ createConnection().then(async connection => {
         });
     });
 
-    app.get('/proposals/spotify', async (req: Request, res: Response) => {
+    app.get('/proposals/top', async(req, res) => {
+        
+        if(req.query.length === 0 || !req.query.limit) {
+            res.json(new ApiResponse(new ApiError(400, `Wrong parameter, expected "limit"(type: int)`)))
+            return;
+        } else if(parseInt(req.query.limit) < 1 || parseInt(req.query.limit ) > 20 ) {
+            res.json(new ApiResponse(new ApiError(400, `Wrong parameter input, expected integer <1;20>`)))
+            return;
+        }
+        
+        let me =null
+        try {
+            me = await spotifyApi.getMe();
+        } catch(err) {
+            console.error('Something went wrong!', err);
+            res.json(new ApiResponse(new ApiError(10, `User not logged in`)));
+            return;
+        }
+        spotifyApi
+                .getMyTopTracks({limit: req.query.limit})
+                .then((data) => {
+                    let mapped = data.body.items.map(el => {
+                        return {id: el.id, 
+                                name: el.name, 
+                                author: el.artists[0].name,
+                                authorId: el.artists[0].id,
+                                album: el.album.name,
+                                albumId: el.album.id}})
+                    console.log(mapped);
+                    res.json(mapped);
+                },(err) => {
+                    console.error('Something went wrong!', err);
+                    res.json(new ApiResponse(new ApiError(10, `User not logged in`)))
+                });
+    })
+
+    app.get('/proposals/gpsy', async (req: Request, res: Response) => {
         if(req.query.length === 0 || !req.query.limit) {
             res.json(new ApiResponse(new ApiError(400, `Wrong parameter, expected "limit"(type: int)`)))
             return;
@@ -274,6 +307,56 @@ createConnection().then(async connection => {
         });
     }); 
 
+    app.get('/proposals/spotify', async (req: Request, res: Response) => {
+        if(req.query.length === 0 || !req.query.limit) {
+            res.json(new ApiResponse(new ApiError(400, `Wrong parameter, expected "limit"(type: int)`)))
+            return;
+        } else if(parseInt(req.query.limit) < 1 || parseInt(req.query.limit ) > 20 ) {
+            res.json(new ApiResponse(new ApiError(400, `Wrong parameter input, expected integer <1;20>`)))
+            return;
+        }
+        let me = null;
+        let mostFrequent = null;
+        try {
+            me = await spotifyApi.getMe();
+        } catch(err) {
+            console.error('Something went wrong!', err);
+            res.json(new ApiResponse(new ApiError(10, `User not logged in`)));
+            return;
+        }
+        let topTracks = null;
+        try {
+            topTracks = await spotifyApi
+                            .getMyTopTracks({limit: 5});
+            
+            topTracks = topTracks.body.items.map(el => {
+                                                            return {id: el.id, 
+                                                                name: el.name, 
+                                                                author: el.artists[0].name,
+                                                                authorId: el.artists[0].id,
+                                                                album: el.album.name,
+                                                                albumId: el.album.id}})
+        } catch(err) {
+            console.error('Something went wrong!', err);
+            res.json(new ApiResponse(new ApiError(10, `User not logged in`))); //TODO napisac ze problem z baza
+            return;
+        }
+        mostFrequent = topTracks.map(el => el.id)
+
+        spotifyApi.getRecommendations({
+            min_energy: 0.4,
+            seed_tracks: mostFrequent,
+            limit: req.query.limit,
+            min_popularity: 60
+          })
+        .then(function(data) {
+          let recommendations = data.body.tracks;
+          res.json(new ApiResponse(new ApiSuccess(recommendations.map(el => {return {id: el.id, name: el.name, author: el.artists[0].name, album: el.album.name}}))))
+        }, function(err) {
+            console.error('Something went wrong!', err);
+            res.json(new ApiResponse(new ApiError(10, `User not logged in`)));
+        });
+    }); 
 //STOP SPOTIFY AUTHORIZATION PROCESS
 
     // start express server
