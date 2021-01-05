@@ -1,25 +1,22 @@
-import {Entity, PrimaryGeneratedColumn, Column, ManyToMany, Unique} from 'typeorm';
-import { PlaylistTrack } from './PlaylistTrack';
+import {Entity, PrimaryGeneratedColumn, Column, ManyToMany, Unique, PrimaryColumn} from 'typeorm';
+import { SpotifyTrack } from './SpotifyTrack';
 
 @Entity()
 @Unique(['userId', 'spotifyPlaylistId'])
 export class UserPlaylist {
 
-    @PrimaryGeneratedColumn()
-    internalPlaylistId: Number;
+    @PrimaryColumn()
+    spotifyPlaylistId: string;
 
     @Column()
-    userId: Number;
+    userId: string;
 
     @Column()
-    spotifyPlaylistId: String;
-
-    @Column()
-    name: String;
+    name: string;
 
     @Column({nullable: true})
-    description: String;
+    description: string;
 
-    @ManyToMany(() => PlaylistTrack, track => track.playlists)
-    tracks: PlaylistTrack[];
+    @ManyToMany(() => SpotifyTrack, track => track.playlists, {eager: true, cascade: false})
+    tracks: SpotifyTrack[];
 }

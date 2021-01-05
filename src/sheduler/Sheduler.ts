@@ -53,7 +53,9 @@ export class Scheduler {
                                                                 , author: item.track.artists[0].name
                                                                 , authorId: item.track.artists[0].id
                                                                 , album: item.track.album.name
-                                                                , albumId: item.track.album.id})
+                                                                , albumId: item.track.album.id
+                                                                , durationMs: item.track.duration_ms
+                                                                 })
                                 }
                                 let retDate = new Date(item.played_at);
                                 retDate.setMilliseconds(Math.round(retDate.getMilliseconds()/1000) * 1000);

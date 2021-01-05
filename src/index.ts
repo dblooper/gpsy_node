@@ -15,6 +15,7 @@ import { SpotifyTrack } from "./entity/SpotifyTrack";
 import * as bcrypt from 'bcrypt';
 import { Scheduler } from "./sheduler/Sheduler";
 import { SpotifyUserService } from "./service/SpotifyUserService";
+import { UserPlaylist } from "./entity/UserPlaylist";
 dotenv.config();
 
 var TEMP_LOGIN_TO_USER_AUTH = '';
@@ -84,12 +85,16 @@ const unlessCheck = function(middleware, ...paths) {
 }
 
 createConnection().then(async connection => {
+    //initialize repositories
     const userRepository = connection.getRepository(User);
     const spotifyTracksRepository = connection.getRepository(SpotifyTrack);
     const recentTracksRepository = connection.getRepository(RecentlyPlayedTracks);
+    const userPlaylistRepository = connection.getRepository(UserPlaylist);
     const entityManager = getManager();
+    
     // create express app
     const app = express();
+    
     // add middlewares
     app.use(bodyParser.json());
     app.use(unlessCheck(authenticateCheck, "/callback"));
@@ -405,7 +410,8 @@ createConnection().then(async connection => {
                         authorId: el.artists[0].id,
                         album: el.album.name,
                         albumId: el.album.id,
-                        popularity: el.popularity
+                        popularity: el.popularity,
+                        durationMs: el.duration_ms
                     }});
                 }
             if(includeAuthor) {
@@ -418,7 +424,8 @@ createConnection().then(async connection => {
                             authorId: el.artists[0].id,
                             album: el.album.name,
                             albumId: el.album.id,
-                            popularity: el.popularity
+                            popularity: el.popularity,
+                            durationMs: el.duration_ms
                         }});
                 }
             } else {
@@ -432,6 +439,202 @@ createConnection().then(async connection => {
             res.json(new ApiResponse(new ApiError(450, `Something went wrong. Try again later`)))
         }
     })
+
+    //PLAYLIST HANDILNG
+
+        /*
+        PATH: /playlists/spotify
+        METHOD: GET
+        DESCRIPTION: Retrieving user playlists from spotify
+        */
+    app.get('/spotify/playlists', async (req, res) => {
+        let spotifyApi = API_INSTANCES.get(req.query.login)[0];
+        try {
+            let user: User = await userRepository.findOne(req.query.login);
+        
+            if(user) {
+                if(req.query.id) {
+                    try {
+                        let response = await spotifyApi.getPlaylist(req.query.id);
+                        let tracksFetched = response.body.tracks.items.map(el => {return{
+                            trackId: el.track.id,
+                            name: el.track.name,
+                            author: el.track.artists[0].name,
+                            authorId: el.track.artists[0].id,
+                            album: el.track.album.name,
+                            albumId: el.track.album.id,
+                            durationMs: el.track.duration_ms
+                        }});
+                        let playlist = {
+                            userId: user.id,
+                            spotifyPlaylistId: response.body.id,
+                            name: response.body.name,
+                            description: response.body.description,
+                            tracks: tracksFetched
+                        }
+                        let playlistExisting = await userPlaylistRepository.findOne(playlist.spotifyPlaylistId);
+
+                        if(playlistExisting && playlist && playlist.tracks.length) {
+                            for(let tracktoDelete of playlistExisting.tracks) {
+                                if(!playlist.tracks.find(el => el.trackId === tracktoDelete.trackId)) {
+                                    playlistExisting.tracks.splice(playlistExisting.tracks.indexOf(tracktoDelete), 1);
+                                }
+                            }
+                            for(let track of playlist.tracks) {
+                                if(track && playlistExisting.tracks && !playlistExisting.tracks.find(el => el.trackId === track.trackId)) {
+                                    try {
+                                        let trackInDb = await spotifyTracksRepository.findOne(track.trackId);
+                                        if(trackInDb) {
+                                            playlistExisting.tracks.push(trackInDb);
+                                        } else {
+                                            await spotifyTracksRepository.save(track);
+                                            playlistExisting.tracks.push(track);
+                                        }
+                                    } catch(err) {
+                                        console.error(`Cannot retrieve track from db`, err)
+                                        res.json(new ApiResponse(new ApiError(500, `Internal error. Try again later`)))
+                                    }
+                                }
+                                
+                            }
+                            try {
+                                await userPlaylistRepository.save(playlistExisting);
+                                console.info(`Playlist ${playlistExisting.spotifyPlaylistId} state saved`)
+                            } catch(err) {
+                                console.error(`Playlist ${playlistExisting.spotifyPlaylistId} state saving error`, err)
+                            }
+                        } else if(playlist) {
+                            try {
+                                let tracksToSave = [];
+                                for(let track of playlist.tracks) {
+                                    let trackInDb = await spotifyTracksRepository.findOne(track.trackId);
+                                    if(!trackInDb) {
+                                        tracksToSave.push(track);
+                                    }
+                                }
+                                await spotifyTracksRepository.save(tracksToSave);
+                                await userPlaylistRepository.save(playlist);
+                                console.info(`Playlist ${playlistExisting.spotifyPlaylistId} state saved`)
+                            } catch(err) {
+                                console.error(`Playlist ${playlist.spotifyPlaylistId} state saving error`, err)
+                            }
+                        }
+                        res.json(new ApiResponse(new ApiSuccess(playlist)))
+                    } catch(err) {
+                        console.error(`Playlist ${req.query.id} not found for ${user.email}`, err)
+                        res.json(new ApiResponse(new ApiError(50, `Playlist not found!`)))
+                    }
+                } else {
+                    let response = await spotifyApi.getUserPlaylists(user.id);
+                    let playlists = response.body.items.map(el => {
+                        return {
+                            userId: user.id,
+                            spotifyPlaylistId: el.id,
+                            name: el.name,
+                            description: el.description
+                        }})
+                    let playlistsExisting: UserPlaylist[] = await userPlaylistRepository.find();
+                    let newPlaylists = [];
+                    for(let playlist of playlists) {
+                        let newPlaylist = true;
+                        for(let dbPlaylist of playlistsExisting) {
+                            if(dbPlaylist.spotifyPlaylistId === playlist.spotifyPlaylistId && 
+                                dbPlaylist.userId === playlist.userId && dbPlaylist.name === playlist.name && dbPlaylist.description === playlist.description) {
+                                    newPlaylist = false;
+                                } else if(dbPlaylist.spotifyPlaylistId === playlist.spotifyPlaylistId && 
+                                    dbPlaylist.userId === playlist.userId && (dbPlaylist.name !== playlist.name || dbPlaylist.description !== playlist.description)) {
+                                }
+                        }
+                        if(newPlaylist) {
+                            newPlaylists.push(playlist);
+                        }
+                    }
+                    if(newPlaylists.length > 0) {
+                        await userPlaylistRepository.save(newPlaylists);
+                        console.error(`[${new Date().toISOString()}] ${user.email} saved new playlists to database!`)
+                    }
+                    res.json(new ApiResponse(new ApiSuccess(playlists)))
+                }
+            } else {
+                console.error(`[${new Date().toISOString()}] User ${req.query.login} not found in database`);
+                res.json(new ApiResponse(new ApiError(455, `User not found. Make sure you are registered!`)));
+            }
+        } catch(err) {
+            console.error('Something went wrong: ', err)
+            res.json(new ApiResponse(new ApiError(450, `Something went wrong. Try again later`)));
+        }
+    });
+
+        /*
+        PATH: /playlists/spotify
+        METHOD: GET
+        DESCRIPTION: Retrieving user playlists from spotify
+        */
+    app.post('/spotify/playlists/track/add', async (req, res) => {
+        let spotifyApi = API_INSTANCES.get(req.query.login)[0];
+        try {
+            let user: User = await userRepository.findOne(req.query.login);
+            if(user) {
+                let playlist: UserPlaylist = await userPlaylistRepository.findOne({userId: user.id, spotifyPlaylistId: req.body.playlistId})
+                if(playlist) { 
+                    let responseMessage = {success: [], failed: []}
+                    for(let track of req.body.tracks) {
+                        try {
+                            let dbTrack: SpotifyTrack = await spotifyTracksRepository.findOne(track.id);
+                            if(dbTrack) {
+                                if(!playlist.tracks) {
+                                    playlist.tracks = []; 
+                                }
+                                if(playlist.tracks.find((el) => el.trackId === track.id)) {
+                                    track.cause = "Track already exists"
+                                    responseMessage.failed.push(track); 
+                                } else {
+                                    playlist.tracks.push(dbTrack);
+                                    responseMessage.success.push(track);
+                                }         
+                            } else {
+                                track.cause = "Track not found"
+                                responseMessage.failed.push(track); 
+                            }
+                        } catch(err) {
+                            console.error(`[${new Date().toISOString()}] Track ${track.id} not found`, err)
+                            track.cause = "Track internal search error"
+                            responseMessage.failed.push(track);
+                        }
+                    }
+                    
+                    try {
+                        if(responseMessage.success.length) {
+                            let spotifyMapTracks = responseMessage.success.map(el => `spotify:track:${el.id}`);
+                            await spotifyApi.addTracksToPlaylist(playlist.spotifyPlaylistId, spotifyMapTracks);
+                        }
+                        try {
+                            if(responseMessage.success.length) {
+                                await userPlaylistRepository.save(playlist);
+                                console.info(`[${new Date().toISOString()}] ${user.email} added tracks to playlist ${playlist.spotifyPlaylistId}`)
+                            }
+                            res.json(new ApiResponse(new ApiSuccess(responseMessage)));
+                        } catch(err){
+                            console.error(`[${new Date().toISOString()}] Saving tracks to playlist ${playlist.spotifyPlaylistId} db failed`);
+                            res.json(new ApiResponse(new ApiError(455, `Saving failed, try again later`)));
+                        }
+                    } catch(err) {
+                        console.error(`[${new Date().toISOString()}] Playlist ${req.body.playlistId} sending error to spotify`, err);
+                        res.json(new ApiResponse(new ApiError(455, `Sending elements to spotify error`)));
+                    }
+                } else {
+                    console.error(`[${new Date().toISOString()}] Playlist ${req.body.playlistId} not found in database`);
+                    res.json(new ApiResponse(new ApiError(455, `Playlist not found. Make sure you have this one!`)));
+                }
+            } else {
+                console.error(`[${new Date().toISOString()}] User ${req.query.login} not found in database`);
+                res.json(new ApiResponse(new ApiError(455, `User not found. Make sure you are registered!`)));
+            }
+        } catch(err) {
+            console.error('Something went wrong: ', err)
+            res.json(new ApiResponse(new ApiError(450, `Something went wrong. Try again later`)));
+        }
+    });
 
     // START EXPRESS APP
     app.listen(process.env.PORT || 8080, () => {
