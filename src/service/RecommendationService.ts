@@ -5,10 +5,18 @@ import { User } from "../entity/User";
 
 export class RecommendationService {
 
-    static recommendTracksFromGpsy = async (limit: number, spotifyApi: any, user:User, entityManager: any) => {
+    private entityManager;
+    private firstRun: boolean = true;
+    private sqlProcedureCalc: string = 'call calc_track_popularity;' 
+
+    constructor(entityManager) {
+        this.entityManager = entityManager;
+    }
+
+    recommendTracksFromGpsy = async (limit: number, spotifyApi: any, user:User) => {
         let mostFrequent = null;
         try {
-            mostFrequent = await entityManager.query(
+            mostFrequent = await this.entityManager.query(
                 `select 
                     rpt.spotifyTrackId
                     ,rpt.userId
@@ -24,14 +32,13 @@ export class RecommendationService {
                 limit 5`, [user.id ? user.id : '']
             )
         } catch(err) {
-            console.error('Something went wrong!', err);
+            console.error('[${new Date().toISOString()}] Something went wrong!', err);
             return new ApiResponse(new ApiError(450, `Cannot get recommendation. Internal Error`)); //TODO napisac ze problem z baza
         }
         mostFrequent = mostFrequent.map(el => el.spotifyTrackId);
         try {
             let data = await spotifyApi
                     .getRecommendations({
-                        min_energy: 0.4,
                         seed_tracks: mostFrequent,
                         limit: limit,
                         min_popularity: 60
@@ -49,8 +56,24 @@ export class RecommendationService {
                                                                 , albumId:  el.album.id
                                                                 , durationMs:  el.duration_ms}}))))
         } catch(err) {
-            console.error('Something went wrong!', err);
+            console.error('[${new Date().toISOString()}] Something went wrong!', err);
             return (new ApiResponse(new ApiError(10, `User not logged in`)));
         }
     }
+
+    calculateGpsyPopularTracks = async() => {
+        try {
+            if(this.firstRun) {
+                let queryResult = await this.entityManager.query(
+                    this.sqlProcedureCalc
+                )
+                console.info(`[${new Date().toISOString()}] Message from popularity calc ${JSON.stringify(queryResult)}`);
+            }
+            
+        } catch(err) {
+            console.error('[${new Date().toISOString()}] Something went wrong!', err);
+            return new ApiResponse(new ApiError(450, `Cannot get recommendation. Internal Error`)); //TODO napisac ze problem z baza
+        }
+    }
+
 }

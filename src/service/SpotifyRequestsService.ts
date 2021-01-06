@@ -43,8 +43,10 @@ export class SpotifyRequestsService {
     }
 
     public static addTracksToPlaylist = async (providedPlaylistId, providedTracks, user, spotifyApi, userPlaylistRepository, spotifyTracksRepository) => {
-
-        let playlist: UserPlaylist = await userPlaylistRepository.findOne({userId: user.id, spotifyPlaylistId: providedPlaylistId})
+        if(typeof providedPlaylistId !== 'string') {
+            return new ApiResponse(new ApiError(300, 'Invalid playlist id!'))
+        }
+        let playlist: UserPlaylist = await userPlaylistRepository.findOne({userId: user.id, spotifyPlaylistId: `${providedPlaylistId}`})
         if(playlist) { 
             let responseMessage = {success: [], failed: []}
             for(let track of providedTracks) {
@@ -213,4 +215,5 @@ export class SpotifyRequestsService {
         }
         return(new ApiResponse(new ApiSuccess(playlists)))
     }
+
 }

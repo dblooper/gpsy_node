@@ -1,4 +1,5 @@
 {
     "domain": "http://localhost:8080",
-    "recommendedPlaylistName": "gpsy_recommendation"
+    "recommendedPlaylistName": "gpsy_recommendation",
+    "recommendedPlaylistDescription": "myPlaylist"
 }

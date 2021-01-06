@@ -5,17 +5,17 @@ import {Entity, PrimaryGeneratedColumn, Column, Unique} from 'typeorm'
 export class TrackPopularityCalc {
 
     @PrimaryGeneratedColumn()
-    id: Number; 
+    id: number; 
 
     @Column()
-    userId: Number;
+    userId: string;
 
     @Column()
-    spotifyTrackId: String;
+    spotifyTrackId: string;
 
     @Column({type: 'datetime', nullable: true})
-    recentPlayed: Date
+    recentlyPlayed: Date
 
     @Column({default: 0})
-    popularity: Number;
+    popularity: number;
 }

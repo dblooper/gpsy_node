@@ -1,6 +1,8 @@
 import "reflect-metadata";
+import LocalStrategy from 'passport-local';
 import {createConnection, getManager} from "typeorm";
 import * as express from "express";
+import session from 'express-session'
 import * as bodyParser from "body-parser";
 import {Request, Response} from "express";
 import {Routes} from "./routes";
@@ -19,6 +21,37 @@ import { UserPlaylist } from "./entity/UserPlaylist";
 import { RecommendedPlaylist } from "./entity/RecommendedPlaylist";
 import { RecommendationService } from "./service/RecommendationService";
 import { SpotifyRequestsService } from "./service/SpotifyRequestsService";
+import axios from 'axios'
+import { resolve } from "url";
+import jwt from 'express-jwt';
+import { PassportConfig } from "./config/PassportConfig";
+import { nextTick } from "process";
+const passport = require('passport');
+
+const getTokenFromHeaders = (req) => {
+    const {headers: {authorization}} = req;
+    if(authorization && authorization.split(' ')[0] === 'Bearer') {
+        return authorization.split(' ')[1];
+    }
+    return null;
+}
+
+const auth = {
+    required: jwt({
+        secret: 'secret',
+        userProperty: 'payload',
+        getToken: getTokenFromHeaders,
+        algorithms: ['HS256']
+    }),
+    optional: jwt({
+        secret: 'secret',
+        userProperty: 'payload',
+        getToken: getTokenFromHeaders,
+        algorithms: ['HS256'],
+        credentialsRequired: false
+    }),
+}
+
 dotenv.config();
 
 var TEMP_LOGIN_TO_USER_AUTH = '';
@@ -64,8 +97,8 @@ const limitParamCheck = (req, res, next) => {
     if(req.query.length === 0 || !req.query.limit) {
         res.json(new ApiResponse(new ApiError(400, `Wrong parameter, expected [limit](type: int)`)))
         return;
-    } else if(parseInt(req.query.limit) < 1 || parseInt(req.query.limit ) > 20 ) {
-        res.json(new ApiResponse(new ApiError(400, `Wrong parameter input, expected integer <1;20>`)))
+    } else if(parseInt(req.query.limit) < 1 || parseInt(req.query.limit ) > 50 ) {
+        res.json(new ApiResponse(new ApiError(400, `Wrong parameter input, expected integer <1;50>`)))
         return;
     }
     next()
@@ -95,26 +128,30 @@ createConnection().then(async connection => {
     const userPlaylistRepository = connection.getRepository(UserPlaylist);
     const recommentedPlaylistRepository = connection.getRepository(RecommendedPlaylist);
     const entityManager = getManager();
-    
+    const recommendationService = new RecommendationService(entityManager);
+
     // create express app
     const app = express();
-    
+    const passportConf = new PassportConfig(userRepository);
+    passportConf.setPassportConfig()
     // add middlewares
     app.use(bodyParser.json());
-    app.use(unlessCheck(authenticateCheck, "/callback"));
-    app.use('/proposals/top', limitParamCheck)
-    app.use('/proposals/gpsy', limitParamCheck)
-    app.use('/gpsy/playlists/recommend', limitParamCheck)
-    app.use(unlessCheck(async (req, res, next) => {
-        if(!await checkAuthenticaton(userRepository, req.query.login, req.query.password)) {
-            let message =  `User ${req.query.login} not authenticated!`;
-            console.error(message);
-            res.json(new ApiResponse(new ApiError(405, message)));
-            return;
-        } else {
-            next();
-        }
-    }, "/callback", "/register"));
+    app.use(bodyParser.urlencoded({extended: false}));
+    app.use('/proposals/top', limitParamCheck);
+    app.use('/proposals/gpsy', limitParamCheck);
+    app.use('/gpsy/playlists/recommend', limitParamCheck);
+    app.use(session({secret: 'gpsy', cookie: {maxAge: 60000}, resave: false, saveUninitialized: false}))
+    //app.use(unlessCheck(authenticateCheck, "/callback", "/test", "/test2"));
+    // app.use(unlessCheck(async (req, res, next) => {
+    //     if(!await checkAuthenticaton(userRepository, req.query.login, req.query.password)) {
+    //         let message =  `User ${req.query.login} not authenticated!`;
+    //         console.error(message);
+    //         res.json(new ApiResponse(new ApiError(405, message)));
+    //         return;
+    //     } else {
+    //         next();
+    //     }
+    // }, "/callback", "/register", "/test", "/test2"));
 
     //set spotify existing apis
     let apiRetrievedForUser = await SpotifyUserService.retrieveSpotifyUsersSavedToDb(userRepository);
@@ -126,8 +163,9 @@ createConnection().then(async connection => {
                                         , userRepository
                                         , spotifyTracksRepository
                                         , userPlaylistRepository
-                                        , API_INSTANCES);
-
+                                        , API_INSTANCES
+                                        ,recommendationService
+                                        );
     // register express routes from defined application routes
     // Routes.forEach(route => {
     //     (app as any)[route.method](route.route, (req: Request, res: Response, next: Function) => {
@@ -141,6 +179,11 @@ createConnection().then(async connection => {
     //     });
     // });
 
+    app.get('/test2',auth.required,async (req, res) => {
+        //let db = await recommentedPlaylistRepository.findOne({name: 'impressional', actual: true});
+        console.log('hello')
+        res.json('Hello')
+    })
 /*
     ===============================================================================
     PATH: /register
@@ -177,7 +220,34 @@ createConnection().then(async connection => {
     DESCRIPTION: Allows access to spotify data - executed only once, after registration
     ===============================================================================
 */
-    app.get('/login', async (req: Request, res: Response) => {
+app.post('/login',auth.optional, async (req: Request, res: Response) => {
+    
+    return passport.authenticate('local', {session: false}, (err, passportUser, info) => {
+        if(err) return res.json(err);
+        console.log(passportUser)
+        if(passportUser) {
+            const user: User = passportUser;
+            return res.json(
+                {
+                    username: user.login,
+                    spotifyId: user.id,
+                    token: user.generateJWT()
+                });
+        }
+        console.log(info)
+        res.status(400);
+        res.json(info);
+    })(req, res)
+});
+
+/*
+    ===============================================================================
+    PATH: /allowSpotify
+    METHOD: GET
+    DESCRIPTION: Allows access to spotify data - executed only once, after registration
+    ===============================================================================
+*/
+    app.get('/allow-spotify', async (req: Request, res: Response) => {
         try {
             let user = await userRepository.findOne(req.query.login);
             if(user && user.id) {
@@ -402,12 +472,12 @@ createConnection().then(async connection => {
     DESCRIPTION: Gives propsals from gpsy, based on most frequently heard tracks
     ===============================================================================
 */
-    app.get('gpsy/proposals', async (req: Request, res: Response) => {
+    app.get('/gpsy/proposals', async (req: Request, res: Response) => {
         let spotifyApi = API_INSTANCES.get(req.query.login)[0];
         try {
             let user: User = await userRepository.findOne(req.query.login);
             if(user) {
-                res.json(await RecommendationService.recommendTracksFromGpsy(parseInt(req.query.limit), spotifyApi, user, entityManager));
+                res.json(await recommendationService.recommendTracksFromGpsy(parseInt(req.query.limit), spotifyApi, user));
             } else {
                 console.error(`[${new Date().toISOString()}] User ${req.query.login} not found in database`);
                 res.json(new ApiResponse(new ApiError(455, `User not found. Make sure you are registered!`)));
@@ -653,7 +723,12 @@ createConnection().then(async connection => {
             let user: User = await userRepository.findOne(req.query.login);
             if(user) {
                 let playlistName = req.query.name ? req.query.name : config.recommendedPlaylistName;   
-                let playlist: RecommendedPlaylist = await recommentedPlaylistRepository.findOne({userId: user.id, name: playlistName})
+                let playlist: RecommendedPlaylist = null;
+                if(!req.query.name) {
+                    playlist = await recommentedPlaylistRepository.findOne({userId: user.id, actual: true})
+                } else {
+                    playlist = await recommentedPlaylistRepository.findOne({userId: user.id, name: playlistName})
+                }
                 
                 if(!playlist) {
                     //create new playlist
@@ -674,16 +749,19 @@ createConnection().then(async connection => {
                 } else if(req.query.limit) {
                     playlist.trackQuantity = req.query.limit;
                 }
-                //check if exists playlist already and change status actual
-                let exisitng = await recommentedPlaylistRepository.findOne({userId: user.id, actual: true});
-                if(exisitng) {
+                
+                //check if exists playlist already and change status actual to false, if we do not want to modify actual
+                let exisitng: RecommendedPlaylist = await recommentedPlaylistRepository.findOne({userId: user.id, actual: true});
+                if(exisitng && playlist.spotifyPlaylistId !== exisitng.spotifyPlaylistId) {
                     exisitng.actual = false;
                     await recommentedPlaylistRepository.save(exisitng);
                 }
 
                 try {
-                    let apiResponse = await RecommendationService.recommendTracksFromGpsy(playlist.trackQuantity, spotifyApi, user, entityManager);
+                    let apiResponse = await recommendationService.recommendTracksFromGpsy(playlist.trackQuantity, spotifyApi, user);
+                    
                     if(apiResponse.status === 0 && apiResponse.message instanceof ApiSuccess) {
+
                         let gpsyRecommendations = apiResponse.message.data;
                         let toInsertTracks: SpotifyTrack[] = [];
                         for(let track of gpsyRecommendations) {
@@ -766,7 +844,8 @@ createConnection().then(async connection => {
                                 )
                                 if(response.status === 0 && response.message instanceof ApiSuccess) {
                                     res.status(201);
-                                    res.json(new ApiResponse(new ApiSuccess(`Playlist ${playlist.name} successfully sent to spotify!`)))
+                                    console.info(`[${new Date().toISOString()}] ${user.email} sent recommended playlist ${playlist.spotifyPlaylistId} to spotify`)
+                                    res.json(new ApiResponse(new ApiSuccess(playlist)))
                                 } else {
                                     res.json(response)
                                 }
@@ -780,8 +859,25 @@ createConnection().then(async connection => {
                         }
                     } else {
                         try {
+                            let currPlaylist = await userPlaylistRepository.findOne(playlist.spotifyPlaylistId);
+                            let currPlaylistTracks = currPlaylist.tracks.map(el => {
+                                return {uri: `spotify:track:${el.trackId}`}
+                            })
+                            if(currPlaylistTracks.length) {
+                                let response = await spotifyApi.removeTracksFromPlaylist(playlist.spotifyPlaylistId, currPlaylistTracks);
+                                if(response.statusCode && response.statusCode === 200) {
+                                    currPlaylist.tracks = [];
+                                    await userPlaylistRepository.save(currPlaylist);
+                                }
+                            }
+                        } catch(err) {
+                            console.error(`[${new Date().toISOString()}] ${user.email} cannot delete current tracks for ${playlist.spotifyPlaylistId} from spotify`, err)
+                            res.json(new ApiResponse(new ApiError(455, `Cannot delete current tracks for ${playlist.spotifyPlaylistId} from spotify`)))
+                            return;
+                        }
+                        try {
                             let response = await SpotifyRequestsService.addTracksToPlaylist(
-                                playlist.id
+                                playlist.spotifyPlaylistId
                                 ,playlist.tracks
                                 ,user
                                 ,spotifyApi
@@ -791,8 +887,8 @@ createConnection().then(async connection => {
                             if(response.status === 0 && response.message instanceof ApiSuccess) {
                                 res.status(201);
                             }
+                            console.info(`[${new Date().toISOString()}] ${user.email} sent recommended tracks for ${playlist.spotifyPlaylistId} to spotify`)
                             res.json(response)
-                        
                         } catch(err) {
                             console.error(`[${new Date().toISOString()}] User ${req.query.login} tracks add internal error`, err);
                             res.json(new ApiResponse(new ApiError(455, `Cannot add the tracks properly. Try again later`)));
