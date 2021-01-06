@@ -1,4 +1,4 @@
-import {Entity, PrimaryGeneratedColumn, Column, ManyToMany, Unique, PrimaryColumn} from 'typeorm';
+import {Entity, PrimaryGeneratedColumn, Column, ManyToMany, Unique, PrimaryColumn, UpdateDateColumn, CreateDateColumn} from 'typeorm';
 import { SpotifyTrack } from './SpotifyTrack';
 
 @Entity()
@@ -16,6 +16,15 @@ export class UserPlaylist {
 
     @Column({nullable: true})
     description: string;
+
+    @Column({nullable: true})
+    public: boolean;
+
+    @UpdateDateColumn({nullable: true})
+    lastUpdated: Date;
+
+    @CreateDateColumn()
+    insertDate: Date;
 
     @ManyToMany(() => SpotifyTrack, track => track.playlists, {eager: true, cascade: false})
     tracks: SpotifyTrack[];
