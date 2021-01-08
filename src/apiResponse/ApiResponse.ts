@@ -8,7 +8,7 @@ export class ApiResponse {
     }
     
     status: Number;
-    message: ApiData;
+    info: ApiData;
 
     constructor(message: ApiData) {
         if(message instanceof ApiError) {
@@ -16,6 +16,6 @@ export class ApiResponse {
         } else {
             this.status = ApiResponse.STATUSES.OK;
         }
-        this.message = message;
+        this.info = message;
     }
 }

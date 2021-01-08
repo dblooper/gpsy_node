@@ -1,5 +1,6 @@
 import {Entity, PrimaryGeneratedColumn, Column, PrimaryColumn, CreateDateColumn, Unique} from "typeorm";
 import jwt from 'jsonwebtoken'
+import * as bcrypt from 'bcrypt';
 
 @Entity()
 @Unique(['email'])
@@ -9,7 +10,7 @@ export class User {
     login: string;
 
     @Column()
-    password:string
+    private password:string
 
     @Column({default: null})
     id: string;
@@ -33,12 +34,23 @@ export class User {
     generateJWT = () => {
         const now = new Date();
         const expirationDate = new Date(now);
-        expirationDate.setDate(now.getDate() + 60);
-
+        expirationDate.setTime(now.getTime() + 3600*1000);
         return jwt.sign({
             login: this.login,
             id: this.id,
             exp: expirationDate.getTime()/1000
-        }, 'secret', { algorithm: 'HS256'})
+        }, 'secret-gpsy-app', { algorithm: 'HS256'})
+    }
+
+    decodeJWT(token) {
+        return jwt.decode(token);
+    }
+
+    async setPassword(password) {
+        this.password = await bcrypt.hash(password, 12);
+    }
+
+    getPassword() {
+        return this.password;
     }
 }

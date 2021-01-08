@@ -1,6 +1,9 @@
 import passport from 'passport';
 import LocalStrategy from 'passport-local';
 import * as bcrypt from 'bcrypt';
+import { User } from '../entity/User';
+import { ApiResponse } from '../apiResponse/ApiResponse';
+import { ApiError } from '../apiResponse/ApiError';
 
 export class PassportConfig {
 
@@ -16,9 +19,9 @@ export class PassportConfig {
             passwordFiled: undefined
         }, (login, password, done) => {
             this.userRepository.findOne(login)
-                .then(async (user) => {
-                    if(!user || !await bcrypt.compare(password, user.password)) {
-                        return done(null, false, {errors: {'username or password': 'invalid'}})
+                .then(async (user: User) => {
+                    if(!user || !await bcrypt.compare(password, user.getPassword())) {
+                        return done(null, false, new ApiResponse(new ApiError(1, `username or password invalid`)))
                     }
                     return done(null, user)
                 })

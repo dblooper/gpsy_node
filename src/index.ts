@@ -26,25 +26,28 @@ import { resolve } from "url";
 import jwt from 'express-jwt';
 import { PassportConfig } from "./config/PassportConfig";
 import { nextTick } from "process";
+import { Query } from "typeorm/driver/Query";
 const passport = require('passport');
 
 const getTokenFromHeaders = (req) => {
     const {headers: {authorization}} = req;
     if(authorization && authorization.split(' ')[0] === 'Bearer') {
         return authorization.split(' ')[1];
+    } else if(req.query.token) {
+        return req.query.token;
     }
     return null;
 }
 
 const auth = {
     required: jwt({
-        secret: 'secret',
+        secret: 'secret-gpsy-app',
         userProperty: 'payload',
         getToken: getTokenFromHeaders,
         algorithms: ['HS256']
     }),
     optional: jwt({
-        secret: 'secret',
+        secret: 'secret-gpsy-app',
         userProperty: 'payload',
         getToken: getTokenFromHeaders,
         algorithms: ['HS256'],
@@ -82,17 +85,6 @@ const scopes = [
 ];
 const API_INSTANCES = new Map();
 
-const authenticateCheck = function(req, res, next) {
-    if(!req.query.login || req.query.login.length < 5) { 
-        res.json(new ApiResponse(new ApiError(420, `Wrong parameter, expected [login] with length min 5`)))
-        return;
-    } else if(!req.query.password || req.query.login.length < 5) {
-        res.json(new ApiResponse(new ApiError(420, `Wrong parameter, expected [password]`)))
-        return;
-    }
-    next();
-}
-
 const limitParamCheck = (req, res, next) => {
     if(req.query.length === 0 || !req.query.limit) {
         res.json(new ApiResponse(new ApiError(400, `Wrong parameter, expected [limit](type: int)`)))
@@ -104,12 +96,36 @@ const limitParamCheck = (req, res, next) => {
     next()
 }
 
-const checkAuthenticaton = async (userRepository, login, password) => {
-    let user: User = await userRepository.findOne(login);
-    if(user) {
-        return await bcrypt.compare(password, user.password)
+const checkRegistrationBody = (req, res, next) => {
+    let errors = [];
+
+    if(!req.body.username || !req.body.password) {
+        errors.push({
+            error1: 'Wrong username or password'
+        })
+    } 
+    if(req.body.username.length < 6) {
+        errors.push({
+            error: 'Username length too short. At least 6 characters required'
+        })
+    }
+
+    if(req.body.password.length < 8) {
+        errors.push({
+            error: 'Password length too short. At least 8 characters required'
+        })
+    }
+
+    if(! /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])[A-Za-z0-9]{8,20}$/.test(req.body.password)) {
+        errors.push({
+            error: 'Password does not comply with rule: at least 1 small letter, 1 digit, 1 capital letter'
+        })
+    }
+    
+    if(errors.length) {
+        res.json(new ApiResponse(new ApiError(1, (errors))));
     } else {
-        return false;
+        next()
     }
 }
 
@@ -140,6 +156,7 @@ createConnection().then(async connection => {
     app.use('/proposals/top', limitParamCheck);
     app.use('/proposals/gpsy', limitParamCheck);
     app.use('/gpsy/playlists/recommend', limitParamCheck);
+    app.use('/register', checkRegistrationBody);
     app.use(session({secret: 'gpsy', cookie: {maxAge: 60000}, resave: false, saveUninitialized: false}))
     //app.use(unlessCheck(authenticateCheck, "/callback", "/test", "/test2"));
     // app.use(unlessCheck(async (req, res, next) => {
@@ -152,12 +169,14 @@ createConnection().then(async connection => {
     //         next();
     //     }
     // }, "/callback", "/register", "/test", "/test2"));
-
+    
     //set spotify existing apis
     let apiRetrievedForUser = await SpotifyUserService.retrieveSpotifyUsersSavedToDb(userRepository);
-    apiRetrievedForUser.forEach((value, key) => {
-        API_INSTANCES.set(key, value);
-    });
+    if (apiRetrievedForUser) {
+        apiRetrievedForUser.forEach((value, key) => {
+            API_INSTANCES.set(key, value);
+        });
+    }
     //Schedule jobs for users 
     Scheduler.scheduleTokenAndRecetTracks(recentTracksRepository
                                         , userRepository
@@ -181,8 +200,12 @@ createConnection().then(async connection => {
 
     app.get('/test2',auth.required,async (req, res) => {
         //let db = await recommentedPlaylistRepository.findOne({name: 'impressional', actual: true});
-        console.log('hello')
-        res.json('Hello')
+        let user = new User()
+        let tokenDecoded = user.decodeJWT(req.query.token);
+        res.json({
+            generated: new Date(tokenDecoded.iat*1000),
+            expiration: new Date(tokenDecoded.exp*1000)
+        })
     })
 /*
     ===============================================================================
@@ -191,21 +214,24 @@ createConnection().then(async connection => {
     DESCRIPTION: Allows registration, after that, the spotify login process is allowed and new user is registered
     ===============================================================================
 */
-    app.post('/register', async (req: Request, res: Response) => {
+    app.post('/register', auth.optional ,async (req: Request, res: Response) => {
         try {
-            let user = await userRepository.findOne(req.query.login);
+            let user = await userRepository.findOne(req.body.username);
             if(!user) {
-                let hash = await bcrypt.hash(req.query.password, 12)
-                await userRepository.save({
-                    login: req.query.login,
-                    password: hash
-                })
-                console.info(`${new Date().toISOString()}: New user ${req.query.login} registered!`);
-                res.json(new ApiResponse(new ApiSuccess(`Welcome ${req.query.login}. Registration success!`)))
+                user = new User();
+                user.login = req.body.username;
+                let firstToken = user.generateJWT();
+                await user.setPassword(req.body.password);
+                await userRepository.save(user);
+                console.info(`${new Date().toISOString()}: New user ${req.body.username} registered!`);
+                res.json(new ApiResponse(new ApiSuccess({
+                                                            username: user.login,
+                                                            spotifyId: user.id,
+                                                            token: firstToken
+                                                        })))
             } else {
-                let message = `User ${req.query.login} exists!`
-                console.error(message);
-                res.json(new ApiResponse(new ApiError(401, message)));
+                let message = {error: `User ${user.login} exists!`}
+                res.json(new ApiResponse(new ApiError(1, message)));
             }
         } catch(err) {
             console.error(`Error from registration`, err)
@@ -224,17 +250,16 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
     
     return passport.authenticate('local', {session: false}, (err, passportUser, info) => {
         if(err) return res.json(err);
-        console.log(passportUser)
+
         if(passportUser) {
             const user: User = passportUser;
-            return res.json(
-                {
-                    username: user.login,
-                    spotifyId: user.id,
-                    token: user.generateJWT()
-                });
+            return res.json(new ApiResponse(new ApiSuccess( {
+                username: user.login,
+                spotifyId: user.id,
+                token: user.generateJWT()
+            }))
+               );
         }
-        console.log(info)
         res.status(400);
         res.json(info);
     })(req, res)
@@ -247,14 +272,18 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
     DESCRIPTION: Allows access to spotify data - executed only once, after registration
     ===============================================================================
 */
-    app.get('/allow-spotify', async (req: Request, res: Response) => {
+    app.get('/allow-spotify', auth.required, async (req: Request, res: Response) => {
+        let loginFromToken = null
         try {
-            let user = await userRepository.findOne(req.query.login);
+            let user = new User();
+            loginFromToken =  user.decodeJWT(getTokenFromHeaders(req)).login;
+            user = await userRepository.findOne(loginFromToken);
             if(user && user.id) {
                 res.json(new ApiResponse(new ApiSuccess(`Already joined your spotify account!`)));
                 return;
             }
         } catch(err) {
+            console.error(`[${new Date()}] Cannot join account`, err)
             res.json(new ApiResponse(new ApiError(99, `Cannot join your account now! Try later!`)));
             return;
         }
@@ -264,7 +293,7 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
             clientId: process.env.CLIENT_ID,
             clientSecret: process.env.CLIENT_SECRET
           });
-        TEMP_LOGIN_TO_USER_AUTH = req.query.login; // ==> give the temp user login state to process
+        TEMP_LOGIN_TO_USER_AUTH = loginFromToken; // ==> give the temp user login state to process
         res.redirect(spotifyApi.createAuthorizeURL(scopes));
     });
 
@@ -310,17 +339,19 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
                     }
                 
                     //save retrieved data of user
-                    API_INSTANCES.set(req.query.login, [spotifyApi, new Date(), new Date(), new Date()]);
+                    API_INSTANCES.set(TEMP_LOGIN_TO_USER_AUTH, [spotifyApi, new Date(), new Date(), new Date()]);
                     let userRepositoryFound:User = null;
+                    let userWithSameSpotify: User = null;
                     try {
                         userRepositoryFound = await userRepository.findOne(TEMP_LOGIN_TO_USER_AUTH);
+                        userWithSameSpotify = await userRepository.findOne({id: me.body.id ? me.body.id : '', 
+                                                                            email: me.body.email ? me.body.email : '' })
                     } catch(err) {
                         console.info('Cannot access user data from db: ' + err);
                         res.json(new ApiResponse(new ApiError(50, `Cannot access user data from db`)));
                         return;
                     }
-                
-                    if(userRepositoryFound && !userRepositoryFound.id) {
+                    if(userRepositoryFound && !userRepositoryFound.id && !userWithSameSpotify) {
                         userRepositoryFound.id =  me.body.id;
                         userRepositoryFound.email = me.body.email;
                         userRepositoryFound.name = me.body.display_name;
@@ -328,17 +359,23 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
                         await userRepository.save(
                             userRepositoryFound
                         )
+                        console.info(
+                            `Sucessfully retreived access token for ${me.body.email}. Expires in ${expires_in} s.`
+                        );
+                        res.json(new ApiResponse(new ApiSuccess(`Success authorization to ${me.body.display_name}! Now you can close the window and explore the app!`)));
+                        await Scheduler.retrieveUserRecentlyPlayed(userRepositoryFound, spotifyApi, spotifyTracksRepository, recentTracksRepository);
+                        await Scheduler.retrieveUserPlaylists(userRepositoryFound, spotifyApi, userPlaylistRepository, spotifyTracksRepository);
+                    } else if(!userRepositoryFound) {
+                        res.json(new ApiResponse(new ApiError(401, `User does not exist!`)));
+                    } else {
+                        res.json(new ApiResponse(new ApiError(401, `You cannot assign the spotify account twice. The user ${userWithSameSpotify ? userWithSameSpotify.login : ''} has been assigned`)));
                     }
                     TEMP_LOGIN_TO_USER_AUTH = ''; // <== give the global variable the initial state
-                    console.info(
-                        `Sucessfully retreived access token for ${me.body.email}. Expires in ${expires_in} s.`
-                    );
-                    res.append('Login', userRepositoryFound.login);
-                    res.json(new ApiResponse(new ApiSuccess(`Success authorization to ${me.body.display_name}! Now you can close the window and explore the app!`)));
                 })
                 .catch(error => {
                     console.error('Error getting Tokens:', error);
                     res.json(new ApiResponse(new ApiError(11, `Error getting Tokens: ${error}`)));
+                    TEMP_LOGIN_TO_USER_AUTH = ''; // <== give the global variable the initial state
                 });
     });
 
@@ -637,7 +674,7 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
                                                                                 ,spotifyApi
                                                                                 ,userPlaylistRepository
                                                                                 ,spotifyTracksRepository);
-                if(response.status === 0 && response.message instanceof ApiSuccess) {
+                if(response.status === 0 && response.info instanceof ApiSuccess) {
                     res.status(201);
                 }
                 res.json(response);
@@ -681,7 +718,7 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
                         ,user
                         ,userPlaylistRepository
                     )
-                    if(response.status === 0 && response.message instanceof ApiSuccess) {
+                    if(response.status === 0 && response.info instanceof ApiSuccess) {
                         res.status(201);
                         res.json(response);
                     } else {
@@ -760,9 +797,9 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
                 try {
                     let apiResponse = await recommendationService.recommendTracksFromGpsy(playlist.trackQuantity, spotifyApi, user);
                     
-                    if(apiResponse.status === 0 && apiResponse.message instanceof ApiSuccess) {
+                    if(apiResponse.status === 0 && apiResponse.info instanceof ApiSuccess) {
 
-                        let gpsyRecommendations = apiResponse.message.data;
+                        let gpsyRecommendations = apiResponse.info.data;
                         let toInsertTracks: SpotifyTrack[] = [];
                         for(let track of gpsyRecommendations) {
                             let dbTrack: SpotifyTrack = await spotifyTracksRepository.findOne(track.trackId);
@@ -823,10 +860,10 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
                                 ,user
                                 ,userPlaylistRepository
                             )
-                            if(response.status === 0 && response.message instanceof ApiSuccess) {
+                            if(response.status === 0 && response.info instanceof ApiSuccess) {
                                 playlist.sentToSpotify = true;
                                 playlist.sentToSpotifyDate = new Date();
-                                playlist.spotifyPlaylistId = response.message.data.spotifyPlaylistId;
+                                playlist.spotifyPlaylistId = response.info.data.spotifyPlaylistId;
                                 await recommentedPlaylistRepository.save(playlist);
                                 res.status(201);
                             } else {
@@ -842,7 +879,7 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
                                     ,userPlaylistRepository
                                     ,spotifyTracksRepository
                                 )
-                                if(response.status === 0 && response.message instanceof ApiSuccess) {
+                                if(response.status === 0 && response.info instanceof ApiSuccess) {
                                     res.status(201);
                                     console.info(`[${new Date().toISOString()}] ${user.email} sent recommended playlist ${playlist.spotifyPlaylistId} to spotify`)
                                     res.json(new ApiResponse(new ApiSuccess(playlist)))
@@ -884,7 +921,7 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
                                 ,userPlaylistRepository
                                 ,spotifyTracksRepository
                             )
-                            if(response.status === 0 && response.message instanceof ApiSuccess) {
+                            if(response.status === 0 && response.info instanceof ApiSuccess) {
                                 res.status(201);
                             }
                             console.info(`[${new Date().toISOString()}] ${user.email} sent recommended tracks for ${playlist.spotifyPlaylistId} to spotify`)
@@ -905,6 +942,11 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
         }
     });
 
+    app.use(function (err, req, res, next) {
+        if (err.name === 'UnauthorizedError') {
+          res.status(401).json(new ApiResponse(new ApiError(1, err.message)));
+        }
+      });
     // START EXPRESS APP
     app.listen(process.env.PORT || 8080, () => {
         console.info(`App listening at port ${process.env.PORT || 8080}`);

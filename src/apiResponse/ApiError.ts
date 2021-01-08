@@ -2,9 +2,9 @@ import { ApiData } from "./ApiData";
 
 export class ApiError implements ApiData {
     errorCode: Number
-    message: String
+    message: any;
 
-    constructor(errorCode: Number, message: String) {
+    constructor(errorCode: Number, message: any) {
         this.errorCode = errorCode;
         this.message = message;
     }

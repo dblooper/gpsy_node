@@ -1,7 +1,7 @@
 {
    "name": "gpsy",
    "version": "0.0.1",
-   "description": "Awesome project developed with TypeORM.",
+   "description": "gpsy - your smart playlist generator",
    "devDependencies": {
       "@types/chai": "^4.2.14",
       "@types/mocha": "^8.2.0",

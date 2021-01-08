@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { ApiError } from '../src/apiResponse/ApiError';
 import { ApiResponse } from '../src/apiResponse/ApiResponse';
 import { ApiSuccess } from '../src/apiResponse/ApiSuccess';
+import { User } from '../src/entity/User';
 
 describe('Response tests', () => { // the tests container
     it('error response', () => { // the single test
@@ -9,7 +10,7 @@ describe('Response tests', () => { // the tests container
         const apiError = new ApiResponse(errorResponse);
         console.log(JSON.stringify(apiError,null,1));
         expect(apiError.status).to.be.a("number").to.equal(1);
-        expect(apiError.message).to.be.an("object").to.have.property("message").to.equal("Lollipos");
+        expect(apiError.info).to.be.an("object").to.have.property("message").to.equal("Lollipos");
                 /* detect retina */
         // expect(options.detectRetina).to.be.false; // Do I need to explain anything? It's like writing in English!
 
@@ -29,7 +30,11 @@ describe('Response tests', () => { // the tests container
         const apiSuccess = new ApiResponse(success);
         console.log(JSON.stringify(apiSuccess, null, 1));
         expect(apiSuccess.status).to.be.a("number").to.equal(0);
-        expect(apiSuccess.message).to.be.an("object").to.have.property("data").to.have.property('name').to.equal("Ilas");
+        expect(apiSuccess.info).to.be.an("object").to.have.property("data").to.have.property('name').to.equal("Ilas");
+    });
+    it('error response', () => { // the single test
+        let user: User = new User();
+        user.generateJWT()
     });
 });
 
