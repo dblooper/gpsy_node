@@ -31,6 +31,12 @@ export class User {
     @Column({default: null})
     spotifyRefreshToken: string
 
+    @Column({nullable: true}) 
+    spotifyImageUrl: string
+
+    @Column({nullable: true})
+    userImage: string
+
     generateJWT = () => {
         const now = new Date();
         const expirationDate = new Date(now);

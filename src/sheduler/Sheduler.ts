@@ -3,11 +3,12 @@ import { SpotifyTrack } from "../entity/SpotifyTrack";
 import { User } from "../entity/User";
 import { UserPlaylist } from "../entity/UserPlaylist";
 import { SpotifyRequestsService } from "../service/SpotifyRequestsService";
+import { SpotifyUserService } from "../service/SpotifyUserService";
 
 export class Scheduler {
     public static SCHEDULER_HEART_BEAT_S: number = 2;
     //public static SCHEDULER_HEART_BEAT_S: number = 3;
-    public static TOKEN_REFRESH_TIME_S: number = 3300; //3600s expiration
+    public static TOKEN_REFRESH_TIME_S: number = 3400; //3600s expiration
     //public static TOKEN_REFRESH_TIME_S: number = 4;
     public static RETRIEVE_TRACKS_TIME_S: number = 6000; //approx. 2min per track/ 50 tracks
     //public static RETRIEVE_TRACKS_TIME_S: number = 6; //approx. 2min per track/ 50 tracks
@@ -35,16 +36,32 @@ export class Scheduler {
                 let user: User = await userRepository.findOne(key);
                 //REFRESH TOKEN
                 if(new Date().getTime() - value[1].getTime() > Scheduler.TOKEN_REFRESH_TIME_S * 1000) { 
-                    value[1] = await Scheduler.refreshUserToken(spotifyApi, user);
+                    let date = await Scheduler.refreshUserToken(spotifyApi, user);
+                    value[1] = date;
                 }
+
                 //RETRIEVE RECENTLY PLAYED
                 if(new Date().getTime() - value[2].getTime() > Scheduler.RETRIEVE_TRACKS_TIME_S * 1000){ 
-                    value[2] = await Scheduler.retrieveUserRecentlyPlayed(user, spotifyApi, spotifyTracksRepository, recentTracksRepository);
+                        let datePast = new Date(value[2]);
+                    try {
+                        //REFRESH USER DATA
+                        await SpotifyUserService.refreshUserDataFromSpotify(key, spotifyApi, userRepository);
+                        let date = await Scheduler.retrieveUserRecentlyPlayed(user, spotifyApi, spotifyTracksRepository, recentTracksRepository);
+                        value[2] = date;
+                    } catch {
+                        value[2] = datePast;
+                    }
                 }
 
                 //REFRESH USER PLAYLISTS
                 if(new Date().getTime() - value[3].getTime() > Scheduler.RETRIEVE_PLAYLISTS_TIME_S * 1000) { 
-                    value[3] = await Scheduler.retrieveUserPlaylists(user, spotifyApi, userPlaylistRepository, spotifyTracksRepository);
+                        let datePast = new Date(value[2]);
+                    try {
+                        let date = await Scheduler.retrieveUserPlaylists(user, spotifyApi, userPlaylistRepository, spotifyTracksRepository);
+                        value[3] = date;
+                    } catch(err) {
+                        value[3] = datePast
+                    }
                 }
             }
             if(!Scheduler.LAST_CALC_POPULARITY_DATE) {
@@ -108,6 +125,7 @@ export class Scheduler {
             }
         } catch(err) {
             console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving recently played`, err);
+            return new Date();
         }
      }
 
@@ -116,6 +134,7 @@ export class Scheduler {
             await SpotifyRequestsService.retrieveUserPlaylists(user, spotifyApi, userPlaylistRepository);
         } catch(err) {
             console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving playlists`, err);
+            return new Date();
         }
         
         try {
@@ -132,6 +151,7 @@ export class Scheduler {
             return new Date();
         } catch(err) {
             console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving playlists`, err);
+            return new Date();
         }
      }
 

@@ -198,14 +198,21 @@ createConnection().then(async connection => {
     //     });
     // });
 
-    app.get('/test2',auth.required,async (req, res) => {
+    app.get('/test2',async (req, res) => {
         //let db = await recommentedPlaylistRepository.findOne({name: 'impressional', actual: true});
-        let user = new User()
-        let tokenDecoded = user.decodeJWT(req.query.token);
-        res.json({
-            generated: new Date(tokenDecoded.iat*1000),
-            expiration: new Date(tokenDecoded.exp*1000)
-        })
+        // let user = new User()
+        // let tokenDecoded = user.decodeJWT(req.query.token);
+        // res.json({
+        //     generated: new Date(tokenDecoded.iat*1000),
+        //     expiration: new Date(tokenDecoded.exp*1000)
+        // })
+
+        let api = API_INSTANCES.get('daniel')[0];
+        let resp = await api.getMe();
+        console.log(resp.body.images[0].url)
+        console.log(JSON.stringify(resp, null, 1))
+        res.json('resp');
+
     })
 /*
     ===============================================================================
@@ -557,8 +564,7 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
         let tracksByArtist = null;
         try {
             tracksNames = await spotifyApi.searchTracks(req.query.phrase);
-            if(tracksNames) {
-                tracksNames = tracksNames.body.tracks.items.map(el => {
+            if(tracksNames) {tracksNames = tracksNames.body.tracks.items.map(el => {
                     return {id: el.id, 
                         name: el.name, 
                         author: el.artists[0].name,
@@ -931,7 +937,11 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
                             res.json(new ApiResponse(new ApiError(455, `Cannot add the tracks properly. Try again later`)));
                         }
                     }
-                }
+                } else {
+                    console.error(`[${new Date().toISOString()}] Playlist ${req.query.name} not found in database`);
+                    res.json(new ApiResponse(new ApiError(455, `Playlis not found. Make sure you have one!`)));
+                }    
+                
             } else {
                 console.error(`[${new Date().toISOString()}] User ${req.query.login} not found in database`);
                 res.json(new ApiResponse(new ApiError(455, `User not found. Make sure you are registered!`)));

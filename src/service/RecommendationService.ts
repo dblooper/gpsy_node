@@ -40,8 +40,7 @@ export class RecommendationService {
             let data = await spotifyApi
                     .getRecommendations({
                         seed_tracks: mostFrequent,
-                        limit: limit,
-                        min_popularity: 60
+                        limit: limit
                     });
             let recommendations = data.body.tracks;
             return (new ApiResponse(

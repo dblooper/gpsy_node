@@ -43,4 +43,21 @@ export class SpotifyUserService {
         return apiInstances;
     }
 
+    static async refreshUserDataFromSpotify (login, spotifyApi, userRepository) {
+        if(! await SpecialCasesHandler.hasInternetConnection()) {
+            return;
+        }
+
+        let user: User = await userRepository.findOne(login);
+        if(user) {
+            let spotifyUser = await spotifyApi.getMe();
+            if(spotifyUser) {
+                if(spotifyUser.body.images[0] && spotifyUser.body.images[0].url && user.spotifyImageUrl !== spotifyUser.body.images[0].url) {
+                    user.spotifyImageUrl = spotifyUser.body.images[0].url;
+                    userRepository.save(user);
+                    console.log('done');
+                }
+            }
+        }
+    }
 }
