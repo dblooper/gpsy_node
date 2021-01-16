@@ -6,25 +6,28 @@ import { UserPlaylist } from './UserPlaylist';
 export class SpotifyTrack {
 
     @PrimaryColumn()
-    trackId: String;
+    trackId: string;
 
     @Column()
-    name: String;
+    name: string;
 
     @Column()
-    author: String;
+    author: string;
 
     @Column()
-    authorId: String;
+    authorId: string;
 
     @Column()
-    album: String;
+    album: string;
 
     @Column()
-    albumId: String;
+    albumId: string;
 
     @Column({default: 0})
     durationMs: Number;
+
+    @Column({default: ''})
+    genres: string;
 
     @Column()
     @CreateDateColumn()

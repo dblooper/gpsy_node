@@ -1,6 +1,6 @@
 import './App.css';
-import TrackDashboard from './components/TrackDashboard';
 import {makeStyles } from '@material-ui/core/styles';
+import Dashboard from './components/Dashboard';
 
 const useStyles = makeStyles(theme => ({
   darkPalette: {
@@ -12,7 +12,7 @@ function App() {
   const classes = useStyles();
   return (
     <div className={classes.darkPalette}>
-        <TrackDashboard></TrackDashboard>
+        <Dashboard></Dashboard>
     </div>
   );
 }

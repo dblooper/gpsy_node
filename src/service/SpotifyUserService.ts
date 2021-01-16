@@ -60,4 +60,17 @@ export class SpotifyUserService {
             }
         }
     }
+
+    static refreshUserToken = async (spotifyApi, user: User) => {
+        try {
+            const data = await spotifyApi.refreshAccessToken();
+            const access_token = data.body['access_token'];
+            spotifyApi.setAccessToken(access_token);
+            console.info(`[${new Date().toISOString()}] SCHEDULER: ${user.email ? user.email : 'user'} token refreshed!`);
+            return new Date();
+        }catch(err) {
+            console.error(`Not refreshed token for ${user.email ? user.email : 'user'}`, err)
+            return null;
+        }
+     }
 }

@@ -39,46 +39,35 @@ export default function CenteredTabs(props) {
     setValue(newValue);
   };
 
-  const[selected, setSelected] = React.useState(<Tabs
-                                                value={value}
-                                                onChange={handleChange}
-                                                indicatorColor="secondary"
-                                                textColor="secondary"
-                                                centered
-                                                >
-                                                <Tab label="Item One" />
-                                                <Tab label="Item Two" />
-                                                <Tab label="Item Three" />
-                                                </Tabs>);
+  const[selected, setSelected] = React.useState(false);
 
   useEffect(() => {
     if(props.numSelected) {
-      setSelected((<div className={classes.selectedRoot}>
+      setSelected(true)
+    } else {
+      setSelected(false)
+    }
+  }, [props.numSelected])
+
+  return (
+    <Paper elevation={0} className={ props.numSelected ? [classes.selectedPaper, classes.root].join(' ') : classes.root}>
+      {selected ? (<div className={classes.selectedRoot}>
                       <Popper/>
                       <Typography className={classes.title} 
                                   color="inherit" 
                                   variant="subtitle1" >{props.numSelected} zaznaczone
                       </Typography>
-                    </div>)
-      )
-    } else {
-      setSelected(<Tabs
+                    </div>) : (<Tabs
           value={value}
           onChange={handleChange}
           indicatorColor="secondary"
           textColor="secondary"
           centered
           >
-          <Tab label="Item One" />
-          <Tab label="Item Two" />
-          <Tab label="Item Three" />
-        </Tabs>)
-    }
-  }, [props.numSelected])
-
-  return (
-    <Paper elevation={0} className={ props.numSelected ? [classes.selectedPaper, classes.root].join(' ') : classes.root}>
-      {selected}
+          <Tab label="Ostatnio grane" />
+          <Tab label="Najpopularniejsze" />
+          <Tab label="Gwiazdy" />
+        </Tabs>)}
     </Paper>
   );
 }

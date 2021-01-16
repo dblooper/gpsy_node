@@ -2,45 +2,63 @@ import { ApiError } from "../apiResponse/ApiError";
 import { ApiResponse } from "../apiResponse/ApiResponse";
 import { ApiSuccess } from "../apiResponse/ApiSuccess";
 import { SpotifyTrack } from "../entity/SpotifyTrack";
-import { User } from "../entity/User";
 import { UserPlaylist } from "../entity/UserPlaylist";
+import { GendresDbRequests } from "../repository/GendresDbRequests";
 
-export class SpotifyRequestsService {
+export default class SpotifyTracksRequestsService {
 
-    public static addSpotifyPlaylist = async(providedName: String, providedPublic, providedDesc, spotifyApi: any, user: User, userPlaylistRepository) => {
-
-        let playlist: UserPlaylist = await userPlaylistRepository.findOne({userId: user.id, name: providedName})
-                if(!playlist && providedName) { 
+    public static retrieveUserRecentlyPlayed = async (user, spotifyApi, spotifyTracksRepository, recentTracksRepository ) => {
+        try {
+            let recentTracks = await spotifyApi.getMyRecentlyPlayedTracks({
+                limit : 50
+            });
+            if(user) {
+                let mappedTracks = [];
+                for(let item of recentTracks.body.items) {
                     try {
-                        let createdPlaylist = await spotifyApi
-                                                        .createPlaylist(providedName, 
-                                                                        {'description': providedDesc ? providedDesc : '',
-                                                                        'public': providedPublic === 'false' ? false : true 
-                        });
-                        if(createdPlaylist.statusCode === 201) {
-                            let newPlaylist = {
-                                userId: user.id,
-                                spotifyPlaylistId: createdPlaylist.body.id,
-                                name: createdPlaylist.body.name,
-                                description: createdPlaylist.body.description,
-                                public: createdPlaylist.body.public
-                            }
-                            await userPlaylistRepository.save(newPlaylist);
-                            console.info(`[${new Date().toUTCString()}] New playlist ${newPlaylist.spotifyPlaylistId} created by ${user.email}`)
-                            return (new ApiResponse(new ApiSuccess(newPlaylist)));
-                      } else {
-                        console.error(`[${new Date().toISOString()}] ${user.id} Playlist ${providedName} not created`);
-                        return (new ApiResponse(new ApiError(455, `Playlist not created! Spotify service error`)));  
-                      }
+                        let track: SpotifyTrack = await spotifyTracksRepository.findOne(item.track.id);
+                        if(!track) {
+                            track = await spotifyTracksRepository.save({trackId: item.track.id
+                                                        , name: item.track.name
+                                                        , author: item.track.artists[0].name
+                                                        , authorId: item.track.artists[0].id
+                                                        , album: item.track.album.name
+                                                        , albumId: item.track.album.id
+                                                        , durationMs: item.track.duration_ms
+                                                        })
+                        }
+                        let retDate = new Date(item.played_at);
+                        retDate.setMilliseconds(Math.round(retDate.getMilliseconds()/1000) * 1000);
+                        let inDb = await recentTracksRepository.findOne(
+                            {userId: user.id,
+                            spotifyTrackId: item.track.id,
+                            playedAt: retDate}
+                        )
+                        
+                        if(!inDb) {
+                            mappedTracks.push({userId: user.id,
+                                spotifyTrackId: item.track.id,
+                                playedAt: new Date(item.played_at)})
+                        }
                     } catch(err) {
-                        console.error(`[${new Date().toISOString()}] Playlist ${providedName} not created`, err)
-                        return (new ApiResponse(new ApiError(455, `Playlist not created! Internal Error`)));
-                    }   
-                } else {
-                    console.error(`[${new Date().toISOString()}] Playlist ${providedName} found in database`);
-                    return (new ApiResponse(new ApiError(455, `Playlist found. Change playlist name and try again!`)));
+                        console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving recently played`, err)
+                    }
                 }
-    }
+                if(mappedTracks) {
+                    await recentTracksRepository.save(mappedTracks);
+                }
+                
+                console.info(`[${new Date().toISOString()}] SCHEDULER:  ${user.email} Recently played tracks fetched successfully`);
+                return new Date();
+            } else {
+                console.info(`[${new Date().toISOString()}] SCHEDULER: User does not exists ${user.email}`);
+                return;
+            }
+        } catch(err) {
+            console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving recently played`, err);
+            return new Date();
+        }
+     }
 
     public static addTracksToPlaylist = async (providedPlaylistId, providedTracks, user, spotifyApi, userPlaylistRepository, spotifyTracksRepository) => {
         if(typeof providedPlaylistId !== 'string') {
@@ -172,48 +190,30 @@ export class SpotifyRequestsService {
         }
     }
 
-    public static retrieveUserPlaylists = async (user, spotifyApi, userPlaylistRepository) => {
-        let response = await spotifyApi.getUserPlaylists(user.id);
-        let playlists = response.body.items.map(el => {
-            return {
-                userId: user.id,
-                spotifyPlaylistId: el.id,
-                name: el.name,
-                description: el.description
-            }})
-        let playlistsExisting: UserPlaylist[] = await userPlaylistRepository.find({userId: user.id});
-        let newPlaylists = [];
-        let toDeletePlaylists = [];
-        for(let playlist of playlists) {
-            let newPlaylist = true;
-            for(let dbPlaylist of playlistsExisting) {
-                if(dbPlaylist.spotifyPlaylistId === playlist.spotifyPlaylistId && 
-                    dbPlaylist.userId === playlist.userId && dbPlaylist.name === playlist.name && dbPlaylist.description === playlist.description) {
-                        newPlaylist = false;
-                    } else if(dbPlaylist.spotifyPlaylistId === playlist.spotifyPlaylistId && 
-                        dbPlaylist.userId === playlist.userId && (dbPlaylist.name !== playlist.name || dbPlaylist.description !== playlist.description)) {
+    static refreshGendres = async (spotifyApi, trakcRepository, genresRepository) => {
+        let tracks: SpotifyTrack[] = await trakcRepository.find({genres: ''});
+        if(tracks.length) {
+            for(let track of tracks) {
+                try {
+                    let aritstDetails = await spotifyApi.getArtist(track.authorId);
+                    let genresRetrieved = [];                
+                    if(aritstDetails && aritstDetails.body && aritstDetails.body.genres) {
+                        genresRetrieved = aritstDetails.body.genres
                     }
+                    if(genresRetrieved.length) {
+                        track.genres = genresRetrieved.join('#');
+                        await trakcRepository.save(track);
+                        await GendresDbRequests.saveGendresFromTrack(track, genresRetrieved, genresRepository);
+                        console.log(`[${new Date().toISOString()}] SCHEDULER: Track ${track.trackId} genres ${genresRetrieved} updated`);
+                    }
+                }catch(err) {
+                    console.log(`[${new Date().toISOString()}] SCHEDULER: Something went wrong updating track gendres`, err)
+                    let myDate = new Date(new Date().getTime() + 5000);
+                    while(new Date() < myDate) {
+                    }
+                }
             }
-            if(newPlaylist) {
-                newPlaylists.push(playlist);
-            }
-        }
-
-        for(let existing of playlistsExisting) {
-            if(!playlists.find(el => existing.spotifyPlaylistId === el.spotifyPlaylistId)) {
-                toDeletePlaylists.push(existing);
-            }
-        }
-        if(newPlaylists.length > 0) {
-            await userPlaylistRepository.save(newPlaylists);
-            console.info(`[${new Date().toISOString()}] ${user.email} saved new playlists to database!`)
-        }
-        if(toDeletePlaylists.length) {
-            let playlists = toDeletePlaylists.map(el => el.spotifyPlaylistId);
-            await userPlaylistRepository.delete(playlists);
-            console.info(`[${new Date().toISOString()}] ${user.email} deleted playlists: ${playlists} from database!`)
-        }
-        return(new ApiResponse(new ApiSuccess(playlists)))
-    }
+         }
+     }
 
 }

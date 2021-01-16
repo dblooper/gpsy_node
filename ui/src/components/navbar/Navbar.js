@@ -22,6 +22,10 @@ const useStyles = makeStyles((theme) => ({
         boxSizing: 'border-box'
   },
   offset: theme.mixins.toolbar,
+  marginOffset: {
+    height: theme.spacing(1)
+    
+  },
   menuButton: {
     marginRight: theme.spacing(2),
   },
@@ -89,7 +93,6 @@ export default function Navbar(props) {
     const classes = useStyles();
     const [anchorEl, setAnchorEl] = React.useState(false);
     const [mobileMoreAnchorEl, setMobileMoreAnchorEl] = React.useState(false);
-  
     const isMenuOpen = Boolean(anchorEl);
     const isMobileMenuOpen = Boolean(mobileMoreAnchorEl);
   
@@ -230,6 +233,7 @@ return(<React.Fragment>
           </div>
         </Toolbar>
       </AppBar>
+      <div className={classes.marginOffset} ></div>
       <div className={classes.offset} />
       {renderMobileMenu}
       {renderMenu}

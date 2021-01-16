@@ -48,7 +48,7 @@ export class User {
         }, 'secret-gpsy-app', { algorithm: 'HS256'})
     }
 
-    decodeJWT(token) {
+    static decodeJWT(token) {
         return jwt.decode(token);
     }
 

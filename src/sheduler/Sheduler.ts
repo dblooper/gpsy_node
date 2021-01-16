@@ -1,8 +1,10 @@
 import { SpecialCasesHandler } from "../config/SpecialCasesHandler";
 import { SpotifyTrack } from "../entity/SpotifyTrack";
+import { TrackGeneres } from "../entity/TrackGenres";
 import { User } from "../entity/User";
 import { UserPlaylist } from "../entity/UserPlaylist";
-import { SpotifyRequestsService } from "../service/SpotifyRequestsService";
+import { SpotifyPlaylistRequestService } from "../service/SpotifyPlaylistRequestService";
+import SpotifyTracksRequestsService from "../service/SpotifyTracksRequestsService";
 import { SpotifyUserService } from "../service/SpotifyUserService";
 
 export class Scheduler {
@@ -15,10 +17,13 @@ export class Scheduler {
     public static RETRIEVE_PLAYLISTS_TIME_S: number = 1800; //half an hour
 
     private static LAST_CALC_POPULARITY_DATE: Date = null;
+    private static LAST_GENRES_REFRESH: Date = null;
     private static CALC_POPULARITY_INTERVAL_S: number = 300;
+    private static GENRES_REFRESH_INTERVAL_S: number = 300;
     private static LOG_DATE = new Date();
 
-    static scheduleTokenAndRecetTracks = async (recentTracksRepository, userRepository,spotifyTracksRepository, userPlaylistRepository, apiInstances: Map<String, [any, Date, Date, Date]>, recommendationService) => {
+    static scheduleTokenAndRecetTracks = async (recentTracksRepository, userRepository,spotifyTracksRepository, userPlaylistRepository, apiInstances: Map<String, [any, Date, Date, Date]>, recommendationService, connection) => {
+        let generesRepository = connection.getRepository(TrackGeneres);
         let schedulingFunction = async () => {
             if(!await SpecialCasesHandler.hasInternetConnection()) {
                 console.error(`[${new Date().toISOString()}] SCHEDULER: No internet connection!`);
@@ -36,7 +41,7 @@ export class Scheduler {
                 let user: User = await userRepository.findOne(key);
                 //REFRESH TOKEN
                 if(new Date().getTime() - value[1].getTime() > Scheduler.TOKEN_REFRESH_TIME_S * 1000) { 
-                    let date = await Scheduler.refreshUserToken(spotifyApi, user);
+                    let date = await SpotifyUserService.refreshUserToken(spotifyApi, user);
                     value[1] = date;
                 }
 
@@ -46,7 +51,7 @@ export class Scheduler {
                     try {
                         //REFRESH USER DATA
                         await SpotifyUserService.refreshUserDataFromSpotify(key, spotifyApi, userRepository);
-                        let date = await Scheduler.retrieveUserRecentlyPlayed(user, spotifyApi, spotifyTracksRepository, recentTracksRepository);
+                        let date = await SpotifyTracksRequestsService.retrieveUserRecentlyPlayed(user, spotifyApi, spotifyTracksRepository, recentTracksRepository);
                         value[2] = date;
                     } catch {
                         value[2] = datePast;
@@ -57,13 +62,26 @@ export class Scheduler {
                 if(new Date().getTime() - value[3].getTime() > Scheduler.RETRIEVE_PLAYLISTS_TIME_S * 1000) { 
                         let datePast = new Date(value[2]);
                     try {
-                        let date = await Scheduler.retrieveUserPlaylists(user, spotifyApi, userPlaylistRepository, spotifyTracksRepository);
+                        let date = await SpotifyPlaylistRequestService.retrieveUserPlaylistsSheduler(user, spotifyApi, userPlaylistRepository, spotifyTracksRepository);
                         value[3] = date;
                     } catch(err) {
                         value[3] = datePast
                     }
                 }
             }
+
+            //REFRESH GENRES
+            if(!Scheduler.LAST_GENRES_REFRESH) {
+                let spotifyApi = apiInstances.entries().next().value[1][0];
+                await SpotifyTracksRequestsService.refreshGendres(spotifyApi, spotifyTracksRepository, generesRepository);
+                Scheduler.LAST_GENRES_REFRESH = new Date();
+            } else if((new Date().getTime() - Scheduler.LAST_GENRES_REFRESH.getTime()) > Scheduler.GENRES_REFRESH_INTERVAL_S * 1000) {
+                let spotifyApi = apiInstances.entries().next().value[1][0];
+                await SpotifyTracksRequestsService.refreshGendres(spotifyApi, spotifyTracksRepository, generesRepository);
+                Scheduler.LAST_GENRES_REFRESH = new Date();
+            }
+
+            //DIRECT DB CALCS
             if(!Scheduler.LAST_CALC_POPULARITY_DATE) {
                 await recommendationService.calculateGpsyPopularTracks();
                 Scheduler.LAST_CALC_POPULARITY_DATE = new Date();
@@ -75,97 +93,6 @@ export class Scheduler {
         await schedulingFunction();
         setInterval(schedulingFunction, Scheduler.SCHEDULER_HEART_BEAT_S * 1000)
      }
-     
-     static retrieveUserRecentlyPlayed = async (user, spotifyApi, spotifyTracksRepository, recentTracksRepository ) => {
-        try {
-            let recentTracks = await spotifyApi.getMyRecentlyPlayedTracks({
-                limit : 50
-            });
-            if(user) {
-                let mappedTracks = [];
-                for(let item of recentTracks.body.items) {
-                    try {
-                        let track: SpotifyTrack = await spotifyTracksRepository.findOne(item.track.id);
-                        if(!track) {
-                            track = await spotifyTracksRepository.save({trackId: item.track.id
-                                                        , name: item.track.name
-                                                        , author: item.track.artists[0].name
-                                                        , authorId: item.track.artists[0].id
-                                                        , album: item.track.album.name
-                                                        , albumId: item.track.album.id
-                                                        , durationMs: item.track.duration_ms
-                                                        })
-                        }
-                        let retDate = new Date(item.played_at);
-                        retDate.setMilliseconds(Math.round(retDate.getMilliseconds()/1000) * 1000);
-                        let inDb = await recentTracksRepository.findOne(
-                            {userId: user.id,
-                            spotifyTrackId: item.track.id,
-                            playedAt: retDate}
-                        )
-                        
-                        if(!inDb) {
-                            mappedTracks.push({userId: user.id,
-                                spotifyTrackId: item.track.id,
-                                playedAt: new Date(item.played_at)})
-                        }
-                    } catch(err) {
-                        console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving recently played`, err)
-                    }
-                }
-                if(mappedTracks) {
-                    await recentTracksRepository.save(mappedTracks);
-                }
-                
-                console.info(`[${new Date().toISOString()}] SCHEDULER:  ${user.email} Recently played tracks fetched successfully`);
-                return new Date();
-            } else {
-                console.info(`[${new Date().toISOString()}] SCHEDULER: User does not exists ${user.email}`);
-                return;
-            }
-        } catch(err) {
-            console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving recently played`, err);
-            return new Date();
-        }
-     }
 
-     static retrieveUserPlaylists = async (user, spotifyApi, userPlaylistRepository, spotifyTracksRepository) => {
-        try {
-            await SpotifyRequestsService.retrieveUserPlaylists(user, spotifyApi, userPlaylistRepository);
-        } catch(err) {
-            console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving playlists`, err);
-            return new Date();
-        }
-        
-        try {
-            let playlists: UserPlaylist[] = await userPlaylistRepository.find({userId: user.id});
-            for(let playlist of playlists) {
-                await SpotifyRequestsService.retrieveUserPlaylistTracks(playlist.spotifyPlaylistId
-                    ,user
-                    ,spotifyApi
-                    ,userPlaylistRepository
-                    ,spotifyTracksRepository
-                    )
-            }
-            console.info(`[${new Date().toISOString()}] SCHEDULER: ${user.email} Playlists refreshed successfully`)
-            return new Date();
-        } catch(err) {
-            console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving playlists`, err);
-            return new Date();
-        }
-     }
-
-     static refreshUserToken = async (spotifyApi, user: User) => {
-        try {
-            const data = await spotifyApi.refreshAccessToken();
-            const access_token = data.body['access_token'];
-            spotifyApi.setAccessToken(access_token);
-            console.info(`[${new Date().toISOString()}] SCHEDULER: ${user.email ? user.email : 'user'} token refreshed!`);
-            return new Date();
-        }catch(err) {
-            console.error(`Not refreshed token for ${user.email ? user.email : 'user'}`, err)
-            return null;
-        }
-     }
 }
 
