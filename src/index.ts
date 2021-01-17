@@ -24,6 +24,8 @@ import SpotifyTracksRequestsService from "./service/SpotifyTracksRequestsService
 import jwt from 'express-jwt';
 import { PassportConfig } from "./config/PassportConfig";
 import { SpotifyPlaylistRequestService } from "./service/SpotifyPlaylistRequestService";
+import {factory} from './config/LoggerConfig'
+const LOG = factory.getLogger("index.Main");
 const passport = require('passport');
 
 const getTokenFromHeaders = (req) => {
@@ -239,7 +241,7 @@ createConnection().then(async connection => {
                 res.json(new ApiResponse(new ApiError(1, message)));
             }
         } catch(err) {
-            console.error(`Error from registration`, err)
+            LOG.error(`Error from registration`, err)
             res.json(new ApiResponse(new ApiError(402, `Error from registration. Try again later`)));
         }
     });
@@ -269,6 +271,62 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
         res.json(info);
     })(req, res)
 });
+
+/*
+    ===============================================================================
+    PATH: /user/statistics
+    METHOD: GET
+    DESCRIPTION: Returns user data required by UI side drawer
+    ===============================================================================
+*/
+app.get('/user/statistics', auth.required, async(req, res) => {
+    let token = req.headers.authorization.split(' ');
+    let decodedToken = User.decodeJWT(token[1]);
+    const userStat = {};
+    try {
+        let user = await userRepository.findOne(decodedToken.login)
+        if(user) {
+            let best = await entityManager.query(`
+                SELECT 
+                    t.name
+                    ,t.author
+                    ,t.album
+                    ,clc.popularity
+                FROM gpsy.track_popularity_calc as clc
+                    inner join gpsy.spotify_track as t
+                        on clc.spotifyTrackId = t.trackId
+                WHERE userId = ?
+                ORDER BY clc.popularity desc
+                LIMIT 1`, [user.id ? user.id : '']);
+            let numberOfTracks = await entityManager.query(`
+                SELECT 
+                    count(distinct rt.spotifyTrackId) as 'tracksQuantity'
+                FROM recently_played_tracks as rt
+                WHERE rt.userId = ?
+                `, [user.id ? user.id : ''])
+            
+            let numberOfPlaylists = await entityManager.query(`
+            SELECT 
+                count(distinct up.spotifyPlaylistId) as 'playlistQuantity'
+            FROM user_playlist as up
+            WHERE up.userId = ?`, [user.id ? user.id : '']);
+            res.json({
+                login: user.login,
+                id: user.id,
+                spotifyDirectLink: user.spotifyLink,
+                from: user.registerDate,
+                bestTrack: best ? best : '',
+                trackQuantity: numberOfTracks[0] && numberOfTracks[0].tracksQuantity ? numberOfTracks[0].tracksQuantity : '',
+                playlistQuantity: numberOfPlaylists[0] && numberOfPlaylists[0].playlistQuantity ? numberOfPlaylists[0].playlistQuantity : ''
+            });
+        } else {
+            res.json(new ApiResponse(new ApiError(401, `User does not exist.`)));
+        }     
+    } catch(err) {
+        res.json(new ApiResponse(new ApiError(12, 'Server Error. Try again later.')))
+        console.error()
+    }
+})
 
 /*
     ===============================================================================
@@ -338,7 +396,7 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
                     try {
                         me = await spotifyApi.getMe();
                     } catch(err) {    
-                        console.error('Cannot access user data: ', err);
+                        LOG.error('Cannot access user data: ', err);
                         res.json(new ApiResponse(new ApiError(20, `Cannot access user data`)));
                         return;
                     }
@@ -352,7 +410,7 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
                         userWithSameSpotify = await userRepository.findOne({id: me.body.id ? me.body.id : '', 
                                                                             email: me.body.email ? me.body.email : '' })
                     } catch(err) {
-                        console.info('Cannot access user data from db: ' + err);
+                        LOG.error('Cannot access user data from db', err);
                         res.json(new ApiResponse(new ApiError(50, `Cannot access user data from db`)));
                         return;
                     }
@@ -361,17 +419,18 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
                         userRepositoryFound.email = me.body.email;
                         userRepositoryFound.name = me.body.display_name;
                         userRepositoryFound.spotifyRefreshToken = refresh_token;
+                        userRepositoryFound.spotifyLink = me.body.external_urls && me.body.external_urls.spotify ? me.body.external_urls.spotify : '';
                         await userRepository.save(
                             userRepositoryFound
                         )
-                        console.info(
-                            `Sucessfully retreived access token for ${me.body.email}. Expires in ${expires_in} s.`
+                        LOG.info(
+                            `Spotify account assigned to ${me.body.email}! Sucessfully retreived access token for ${me.body.email}. Expires in ${expires_in} s.`
                         );
                         res.json(new ApiResponse(new ApiSuccess(`Success authorization to ${me.body.display_name}! Now you can close the window and explore the app!`)));
                         await SpotifyTracksRequestsService.retrieveUserRecentlyPlayed(userRepositoryFound, spotifyApi, spotifyTracksRepository, recentTracksRepository);
                         await SpotifyPlaylistRequestService.retrieveUserPlaylistsSheduler(userRepositoryFound, spotifyApi, userPlaylistRepository, spotifyTracksRepository);
                     } else if(!userRepositoryFound) {
-                        res.json(new ApiResponse(new ApiError(401, `User does not exist!`)));
+                        res.json(new ApiResponse(new ApiError(401, `User does not exist.`)));
                     } else {
                         res.json(new ApiResponse(new ApiError(401, `You cannot assign the spotify account twice. The user ${userWithSameSpotify ? userWithSameSpotify.login : ''} has been assigned`)));
                     }
@@ -977,7 +1036,7 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
       });
     // START EXPRESS APP
     app.listen(process.env.PORT || 8080, () => {
-        console.info(`App listening at port ${process.env.PORT || 8080}`);
+        LOG.info(`App listening at port ${process.env.PORT || 8080}`);
     });
 
 }).catch(error => console.info(error));

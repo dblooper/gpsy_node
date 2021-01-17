@@ -29,6 +29,9 @@ export class User {
     registerDate: Date;
 
     @Column({default: null})
+    spotifyLink: string
+
+    @Column({default: null})
     spotifyRefreshToken: string
 
     @Column({nullable: true}) 
@@ -36,6 +39,12 @@ export class User {
 
     @Column({nullable: true})
     userImage: string
+
+    @Column("blob",{ 
+        nullable:true,
+        name:"imageBlob"
+    })
+    imageBlob: Buffer;
 
     generateJWT = () => {
         const now = new Date();

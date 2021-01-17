@@ -30,7 +30,8 @@
       "passport-local": "^1.0.0",
       "reflect-metadata": "^0.1.10",
       "spotify-web-api-node": "^5.0.0",
-      "typeorm": "0.2.26"
+      "typeorm": "0.2.26",
+      "typescript-logging": "^1.0.0"
    },
    "scripts": {
       "start": "nodemon src/index.ts",

@@ -4,9 +4,12 @@ import { ApiSuccess } from "../apiResponse/ApiSuccess";
 import { SpotifyTrack } from "../entity/SpotifyTrack";
 import { UserPlaylist } from "../entity/UserPlaylist";
 import { GendresDbRequests } from "../repository/GendresDbRequests";
+import {factory} from '../config/LoggerConfig'
 
 export default class SpotifyTracksRequestsService {
 
+    static LOG = factory.getLogger('SpotifyTracksRequestsService');
+    
     public static retrieveUserRecentlyPlayed = async (user, spotifyApi, spotifyTracksRepository, recentTracksRepository ) => {
         try {
             let recentTracks = await spotifyApi.getMyRecentlyPlayedTracks({
@@ -41,21 +44,21 @@ export default class SpotifyTracksRequestsService {
                                 playedAt: new Date(item.played_at)})
                         }
                     } catch(err) {
-                        console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving recently played`, err)
+                        SpotifyTracksRequestsService.LOG.error(`Something went wrong when retrieving recently played`, err)
                     }
                 }
                 if(mappedTracks) {
                     await recentTracksRepository.save(mappedTracks);
                 }
                 
-                console.info(`[${new Date().toISOString()}] SCHEDULER:  ${user.email} Recently played tracks fetched successfully`);
+                SpotifyTracksRequestsService.LOG.info(`${user.email} Recently played tracks fetched successfully`);
                 return new Date();
             } else {
-                console.info(`[${new Date().toISOString()}] SCHEDULER: User does not exists ${user.email}`);
+                SpotifyTracksRequestsService.LOG.info(`User does not exists ${user.email}`);
                 return;
             }
         } catch(err) {
-            console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving recently played`, err);
+            SpotifyTracksRequestsService.LOG.error(`Something went wrong when retrieving recently played`, err);
             return new Date();
         }
      }
@@ -86,7 +89,7 @@ export default class SpotifyTracksRequestsService {
                         responseMessage.failed.push(track); 
                     }
                 } catch(err) {
-                    console.error(`[${new Date().toISOString()}] Track ${track.trackId} not found`, err)
+                    SpotifyTracksRequestsService.LOG.error(` Track ${track.trackId} not found`, err)
                     track.cause = "Track internal search error"
                     responseMessage.failed.push(track);
                 }
@@ -100,19 +103,19 @@ export default class SpotifyTracksRequestsService {
                 try {
                     if(responseMessage.success.length) {
                         await userPlaylistRepository.save(playlist);
-                        console.info(`[${new Date().toISOString()}] ${user.email} added tracks to playlist ${playlist.spotifyPlaylistId}`)
+                        SpotifyTracksRequestsService.LOG.info(` ${user.email} added tracks to playlist ${playlist.spotifyPlaylistId}`)
                     }
                     return (new ApiResponse(new ApiSuccess(responseMessage)));
                 } catch(err){
-                    console.error(`[${new Date().toISOString()}] Saving tracks to playlist ${playlist.spotifyPlaylistId} db failed`);
+                    SpotifyTracksRequestsService.LOG.error(` Saving tracks to playlist ${playlist.spotifyPlaylistId} db failed`);
                     return(new ApiResponse(new ApiError(455, `Saving failed, try again later`)));
                 }
             } catch(err) {
-                console.error(`[${new Date().toISOString()}] Playlist ${providedPlaylistId} sending error to spotify`, err);
+                SpotifyTracksRequestsService.LOG.error(`Playlist ${providedPlaylistId} sending error to spotify`, err);
                 return(new ApiResponse(new ApiError(455, `Sending elements to spotify error`)));
             }
         } else {
-            console.error(`[${new Date().toISOString()}] Playlist ${providedPlaylistId} not found in database`);
+            SpotifyTracksRequestsService.LOG.error(`Playlist ${providedPlaylistId} not found in database`);
             return(new ApiResponse(new ApiError(455, `Playlist not found. Make sure you have this one!`)));
         }
     }
@@ -155,7 +158,7 @@ export default class SpotifyTracksRequestsService {
                                 playlistExisting.tracks.push(track);
                             }
                         } catch(err) {
-                            console.error(`[${new Date().toISOString()}] Cannot retrieve track from db`, err)
+                            SpotifyTracksRequestsService.LOG.error(` Cannot retrieve track from db`, err)
                             return(new ApiResponse(new ApiError(500, `Internal error. Try again later`)))
                         }
                     }
@@ -163,9 +166,9 @@ export default class SpotifyTracksRequestsService {
                 }
                 try {
                     await userPlaylistRepository.save(playlistExisting);
-                    console.info(`[${new Date().toISOString()}] Playlist ${playlistExisting.spotifyPlaylistId} state saved`)
+                    SpotifyTracksRequestsService.LOG.info(`Playlist ${playlistExisting.spotifyPlaylistId} state saved`)
                 } catch(err) {
-                    console.error(`[${new Date().toISOString()}] Playlist ${playlistExisting.spotifyPlaylistId} state saving error`, err)
+                    SpotifyTracksRequestsService.LOG.error(`Playlist ${playlistExisting.spotifyPlaylistId} state saving error`, err)
                 }
             } else if(playlist) {
                 try {
@@ -178,14 +181,14 @@ export default class SpotifyTracksRequestsService {
                     }
                     await spotifyTracksRepository.save(tracksToSave);
                     await userPlaylistRepository.save(playlist);
-                    console.info(`[${new Date().toISOString()}] Playlist ${playlistExisting.spotifyPlaylistId} state saved`)
+                    SpotifyTracksRequestsService.LOG.info(`Playlist ${playlistExisting.spotifyPlaylistId} state saved`)
                 } catch(err) {
-                    console.error(`Playlist ${playlist.spotifyPlaylistId} state saving error`, err)
+                    SpotifyTracksRequestsService.LOG.error(`Playlist ${playlist.spotifyPlaylistId} state saving error`, err)
                 }
             }
            return(new ApiResponse(new ApiSuccess(playlist)))
         } catch(err) {
-            console.error(`[${new Date().toISOString()}] Playlist ${playlistSpotifyId} not found for ${user.email}`, err)
+            SpotifyTracksRequestsService.LOG.error(`Playlist ${playlistSpotifyId} not found for ${user.email}`, err)
             return(new ApiResponse(new ApiError(50, `Playlist not found!`)))
         }
     }
@@ -204,10 +207,10 @@ export default class SpotifyTracksRequestsService {
                         track.genres = genresRetrieved.join('#');
                         await trakcRepository.save(track);
                         await GendresDbRequests.saveGendresFromTrack(track, genresRetrieved, genresRepository);
-                        console.log(`[${new Date().toISOString()}] SCHEDULER: Track ${track.trackId} genres ${genresRetrieved} updated`);
+                        SpotifyTracksRequestsService.LOG.info(`Track ${track.trackId} genres ${genresRetrieved} updated`);
                     }
                 }catch(err) {
-                    console.log(`[${new Date().toISOString()}] SCHEDULER: Something went wrong updating track gendres`, err)
+                    SpotifyTracksRequestsService.LOG.error(`Something went wrong updating track gendres`, err)
                     let myDate = new Date(new Date().getTime() + 5000);
                     while(new Date() < myDate) {
                     }

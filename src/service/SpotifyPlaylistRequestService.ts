@@ -4,14 +4,17 @@ import { ApiSuccess } from "../apiResponse/ApiSuccess";
 import { User } from "../entity/User";
 import { UserPlaylist } from "../entity/UserPlaylist";
 import SpotifyTracksRequestsService from "./SpotifyTracksRequestsService";
+import {factory} from '../config/LoggerConfig'
 
 export class SpotifyPlaylistRequestService {
     
+    static LOG = factory.getLogger('SpotifyPlaylistRequestService');
+
     static retrieveUserPlaylistsSheduler = async (user, spotifyApi, userPlaylistRepository, spotifyTracksRepository) => {
         try {
             await SpotifyPlaylistRequestService.retrieveUserPlaylists(user, spotifyApi, userPlaylistRepository);
         } catch(err) {
-            console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving playlists`, err);
+            SpotifyPlaylistRequestService.LOG.error(`Something went wrong when retrieving playlists`, err);
             return new Date();
         }
         
@@ -25,10 +28,10 @@ export class SpotifyPlaylistRequestService {
                     ,spotifyTracksRepository
                     )
             }
-            console.info(`[${new Date().toISOString()}] SCHEDULER: ${user.email} Playlists refreshed successfully`)
+            SpotifyPlaylistRequestService.LOG.info(`${user.email} Playlists refreshed successfully`)
             return new Date();
         } catch(err) {
-            console.error(`[${new Date().toISOString()}] SCHEDULER: Something went wrong when retrieving playlists`, err);
+            SpotifyPlaylistRequestService.LOG.error(`Something went wrong when retrieving playlists`, err);
             return new Date();
         }
      }
@@ -67,12 +70,12 @@ export class SpotifyPlaylistRequestService {
         }
         if(newPlaylists.length > 0) {
             await userPlaylistRepository.save(newPlaylists);
-            console.info(`[${new Date().toISOString()}] ${user.email} saved new playlists to database!`)
+            SpotifyPlaylistRequestService.LOG.info(`${user.email} saved new playlists to database!`)
         }
         if(toDeletePlaylists.length) {
             let playlists = toDeletePlaylists.map(el => el.spotifyPlaylistId);
             await userPlaylistRepository.delete(playlists);
-            console.info(`[${new Date().toISOString()}] ${user.email} deleted playlists: ${playlists} from database!`)
+            SpotifyPlaylistRequestService.LOG.info(`${user.email} deleted playlists: ${playlists} from database!`)
         }
         return(new ApiResponse(new ApiSuccess(playlists)))
     }
@@ -96,18 +99,18 @@ export class SpotifyPlaylistRequestService {
                                 public: createdPlaylist.body.public
                             }
                             await userPlaylistRepository.save(newPlaylist);
-                            console.info(`[${new Date().toUTCString()}] New playlist ${newPlaylist.spotifyPlaylistId} created by ${user.email}`)
+                            SpotifyPlaylistRequestService.LOG.info(`[${new Date().toUTCString()}] New playlist ${newPlaylist.spotifyPlaylistId} created by ${user.email}`)
                             return (new ApiResponse(new ApiSuccess(newPlaylist)));
                       } else {
-                        console.error(`[${new Date().toISOString()}] ${user.id} Playlist ${providedName} not created`);
+                        SpotifyPlaylistRequestService.LOG.error(`${user.id} Playlist ${providedName} not created`);
                         return (new ApiResponse(new ApiError(455, `Playlist not created! Spotify service error`)));  
                       }
                     } catch(err) {
-                        console.error(`[${new Date().toISOString()}] Playlist ${providedName} not created`, err)
+                        SpotifyPlaylistRequestService.LOG.error(`Playlist ${providedName} not created`, err)
                         return (new ApiResponse(new ApiError(455, `Playlist not created! Internal Error`)));
                     }   
                 } else {
-                    console.error(`[${new Date().toISOString()}] Playlist ${providedName} found in database`);
+                    SpotifyPlaylistRequestService.LOG.error(`Playlist ${providedName} found in database`);
                     return (new ApiResponse(new ApiError(455, `Playlist found. Change playlist name and try again!`)));
                 }
     }
