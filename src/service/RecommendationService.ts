@@ -2,8 +2,10 @@ import { ApiError } from "../apiResponse/ApiError";
 import { ApiResponse } from "../apiResponse/ApiResponse";
 import { ApiSuccess } from "../apiResponse/ApiSuccess";
 import { User } from "../entity/User";
+import {factory} from '../config/LoggerConfig'
 
 export class RecommendationService {
+    static LOG = factory.getLogger('RecommendationService');
 
     private entityManager;
     private firstRun: boolean = true;
@@ -32,7 +34,7 @@ export class RecommendationService {
                 limit 5`, [user.id ? user.id : '']
             )
         } catch(err) {
-            console.error('[${new Date().toISOString()}] Something went wrong!', err);
+            RecommendationService.LOG.error('Something went wrong!', err);
             return new ApiResponse(new ApiError(450, `Cannot get recommendation. Internal Error`)); //TODO napisac ze problem z baza
         }
         mostFrequent = mostFrequent.map(el => el.spotifyTrackId);
@@ -55,8 +57,8 @@ export class RecommendationService {
                                                                 , albumId:  el.album.id
                                                                 , durationMs:  el.duration_ms}}))))
         } catch(err) {
-            console.error('[${new Date().toISOString()}] Something went wrong!', err);
-            return (new ApiResponse(new ApiError(10, `User not logged in`)));
+            RecommendationService.LOG.error('Something went wrong!', err);
+            return (new ApiResponse(new ApiError(10, `Cannot get recommendation. Internal Error`)));
         }
     }
 
@@ -66,12 +68,11 @@ export class RecommendationService {
                 let queryResult = await this.entityManager.query(
                     this.sqlProcedureCalc
                 )
-                console.info(`[${new Date().toISOString()}] Message from popularity calc ${JSON.stringify(queryResult)}`);
+                RecommendationService.LOG.info(`Tracks popularity per user calculated successfully`);
             }
             
         } catch(err) {
-            console.error('[${new Date().toISOString()}] Something went wrong!', err);
-            return new ApiResponse(new ApiError(450, `Cannot get recommendation. Internal Error`)); //TODO napisac ze problem z baza
+            RecommendationService.LOG.error('Something went wrong!', err);
         }
     }
 

@@ -2,7 +2,6 @@ import SpotifyWebApi from "spotify-web-api-node";
 import { User } from "../entity/User";
 import config from '../../config.json';
 import { Scheduler } from "../sheduler/Sheduler";
-import { exit } from "process";
 import { SpecialCasesHandler } from "../config/SpecialCasesHandler";
 
 export class SpotifyUserService {
@@ -55,7 +54,6 @@ export class SpotifyUserService {
                 if(spotifyUser.body.images[0] && spotifyUser.body.images[0].url && user.spotifyImageUrl !== spotifyUser.body.images[0].url) {
                     user.spotifyImageUrl = spotifyUser.body.images[0].url;
                     userRepository.save(user);
-                    console.log('done');
                 }
             }
         }

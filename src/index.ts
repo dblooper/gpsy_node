@@ -1,11 +1,9 @@
 import "reflect-metadata";
-import LocalStrategy from 'passport-local';
 import {createConnection, getManager} from "typeorm";
 import * as express from "express";
 import session from 'express-session'
 import * as bodyParser from "body-parser";
 import {Request, Response} from "express";
-import {Routes} from "./routes";
 import {User} from "./entity/User";
 import config from '../config.json';
 import * as dotenv from 'dotenv';
@@ -14,7 +12,6 @@ import { ApiError } from "./apiResponse/ApiError";
 import { ApiSuccess } from "./apiResponse/ApiSuccess";
 import { RecentlyPlayedTracks } from "./entity/RecentlyPlayedTracks";
 import { SpotifyTrack } from "./entity/SpotifyTrack";
-import * as bcrypt from 'bcrypt';
 import { Scheduler } from "./sheduler/Sheduler";
 import { SpotifyUserService } from "./service/SpotifyUserService";
 import { UserPlaylist } from "./entity/UserPlaylist";
@@ -96,6 +93,10 @@ const limitParamCheck = (req, res, next) => {
 }
 
 const checkRegistrationBody = (req, res, next) => {
+    if(JSON.stringify(req.body) === JSON.stringify({})) {
+        res.redirect('/');
+    }
+
     let errors = [];
 
     if(!req.body.username || !req.body.password) {
@@ -150,12 +151,36 @@ createConnection().then(async connection => {
     const passportConf = new PassportConfig(userRepository);
     passportConf.setPassportConfig()
     // add middlewares
+    const checkIfSpotifyAssigned = async(req, res, next) => {
+        let token = req.headers.authorization.split(' ');
+        let decodedToken = User.decodeJWT(token[1]);
+        try {
+            let user: User = await userRepository.findOne(decodedToken.login);
+            if(user) {
+                if(!user.id) {
+                    res.json(new ApiResponse(new ApiError(456, `account not paired with spotify`)))
+                } else {
+                    let spotifyApi = API_INSTANCES.get(decodedToken.login)[0]; 
+                    req.spotifyApi = spotifyApi;
+                    req.user = user; 
+                    next();
+                }
+            } else {
+                res.json(new ApiResponse(new ApiError(401, `User does not exist.`)));
+            }     
+        } catch(err) {
+            res.status(500);
+            res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')));
+            LOG.error('Error with checking spotify assigned account', err)
+        }
+    }
+   
     app.use(bodyParser.json());
     app.use(bodyParser.urlencoded({extended: false}));
     app.use('/proposals/top', limitParamCheck);
-    app.use('/proposals/gpsy', limitParamCheck);
+    app.use('/spotify/proposals/top', limitParamCheck);
+    app.use('/gpsy/proposals', limitParamCheck);
     app.use('/gpsy/playlists/recommend', limitParamCheck);
-    app.use('/register', checkRegistrationBody);
     app.use(session({secret: 'gpsy', cookie: {maxAge: 60000}, resave: false, saveUninitialized: false}))
     
     //set spotify existing apis
@@ -198,10 +223,10 @@ createConnection().then(async connection => {
         let api = API_INSTANCES.get('daniel')[0];
         api.getArtist('1jZNTB1uy71babTxJFEryZ').then(
             function (data) {
-              console.log('Artist information', data);
+              LOG.info('Artist information', data);
             },
             function (err) {
-              console.error(err);
+              LOG.error(err);
             }
           );
 
@@ -209,8 +234,8 @@ createConnection().then(async connection => {
         // let resp = await api.getMyRecentlyPlayedTracks({
         //     limit : 1
         // });;
-        // console.log(resp.body);
-        // console.log(JSON.stringify(resp, null, 1))
+        // LOG.log(resp.body);
+        // LOG.log(JSON.stringify(resp, null, 1))
          res.json('resp');
 
     })
@@ -221,7 +246,7 @@ createConnection().then(async connection => {
     DESCRIPTION: Allows registration, after that, the spotify login process is allowed and new user is registered
     ===============================================================================
 */
-    app.post('/register', auth.optional ,async (req: Request, res: Response) => {
+    app.post('/register',checkRegistrationBody, auth.optional ,async (req: Request, res: Response) => {
         try {
             let user = await userRepository.findOne(req.body.username);
             if(!user) {
@@ -230,7 +255,7 @@ createConnection().then(async connection => {
                 let firstToken = user.generateJWT();
                 await user.setPassword(req.body.password);
                 await userRepository.save(user);
-                console.info(`${new Date().toISOString()}: New user ${req.body.username} registered!`);
+                LOG.info(`${new Date().toISOString()}: New user ${req.body.username} registered!`);
                 res.json(new ApiResponse(new ApiSuccess({
                                                             username: user.login,
                                                             spotifyId: user.id,
@@ -279,13 +304,9 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
     DESCRIPTION: Returns user data required by UI side drawer
     ===============================================================================
 */
-app.get('/user/statistics', auth.required, async(req, res) => {
-    let token = req.headers.authorization.split(' ');
-    let decodedToken = User.decodeJWT(token[1]);
-    const userStat = {};
+app.get('/user/statistics',checkIfSpotifyAssigned , auth.required, async(req, res) => {
+    let user = req.user;
     try {
-        let user = await userRepository.findOne(decodedToken.login)
-        if(user) {
             let best = await entityManager.query(`
                 SELECT 
                     t.name
@@ -318,13 +339,10 @@ app.get('/user/statistics', auth.required, async(req, res) => {
                 bestTrack: best ? best : '',
                 trackQuantity: numberOfTracks[0] && numberOfTracks[0].tracksQuantity ? numberOfTracks[0].tracksQuantity : '',
                 playlistQuantity: numberOfPlaylists[0] && numberOfPlaylists[0].playlistQuantity ? numberOfPlaylists[0].playlistQuantity : ''
-            });
-        } else {
-            res.json(new ApiResponse(new ApiError(401, `User does not exist.`)));
-        }     
+            });   
     } catch(err) {
-        res.json(new ApiResponse(new ApiError(12, 'Server Error. Try again later.')))
-        console.error()
+        res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')))
+        LOG.error(`Something went wrong with fetching ${user.login} statistics`, err);
     }
 })
 
@@ -346,7 +364,7 @@ app.get('/user/statistics', auth.required, async(req, res) => {
                 return;
             }
         } catch(err) {
-            console.error(`[${new Date()}] Cannot join account`, err)
+            LOG.error(`[${new Date()}] Cannot join account`, err)
             res.json(new ApiResponse(new ApiError(99, `Cannot join your account now! Try later!`)));
             return;
         }
@@ -377,7 +395,7 @@ app.get('/user/statistics', auth.required, async(req, res) => {
         });
 
         if (error) {
-            console.error('Callback Error:', error);
+            LOG.error('Callback Error:', error);
             res.json(new ApiResponse(new ApiError(100, `Callback Error: ${error}`)));
             return;
         }
@@ -437,7 +455,7 @@ app.get('/user/statistics', auth.required, async(req, res) => {
                     TEMP_LOGIN_TO_USER_AUTH = ''; // <== give the global variable the initial state
                 })
                 .catch(error => {
-                    console.error('Error getting Tokens:', error);
+                    LOG.error('Error getting Tokens:', error);
                     res.json(new ApiResponse(new ApiError(11, `Error getting Tokens: ${error}`)));
                     TEMP_LOGIN_TO_USER_AUTH = ''; // <== give the global variable the initial state
                 });
@@ -450,10 +468,8 @@ app.get('/user/statistics', auth.required, async(req, res) => {
     DESCRIPTION: Gives propsals from gpsy, based on most frequently heard tracks
     ===============================================================================
 */
-    app.get('/spotify/played/now', auth.required, async (req, res) => {
-        let token = req.headers.authorization.split(' ');
-        let decodedToken = User.decodeJWT(token[1]);
-        let spotifyApi = API_INSTANCES.get(decodedToken.login)[0];
+    app.get('/spotify/played/now', checkIfSpotifyAssigned, auth.required, async (req, res) => {
+        let spotifyApi = req.spotifyApi;
         spotifyApi
                 .getMyCurrentPlayingTrack()
                 .then(function(data) {
@@ -469,11 +485,11 @@ app.get('/user/statistics', auth.required, async(req, res) => {
                             duration_ms: data.body.item.duration_ms 
                         })));
                     } else {
-                        res.json(new ApiResponse(new ApiSuccess('Nothing currently played')))
+                        res.json(new ApiResponse(new ApiSuccess('nothing currently played')))
                     }
                 }, function(err) {
-                    console.error('Something went wrong!', err);
-                    res.json(new ApiResponse(new ApiError(10, `User not logged in`)));
+                    LOG.error('Something went wrong!', err);
+                    res.json(new ApiResponse(new ApiError(10, `user not logged in`)));
                 });
     });
 
@@ -485,18 +501,8 @@ app.get('/user/statistics', auth.required, async(req, res) => {
     DESCRIPTION: Gives propsals from gpsy, based on most frequently heard tracks
     ===============================================================================
 */
-    app.get('/spotify/proposals/top', auth.required, async(req, res) => {
-        let token = req.headers.authorization.split(' ');
-        let decodedToken = User.decodeJWT(token[1]);
-        let spotifyApi = API_INSTANCES.get(decodedToken.login)[0];
-        let me =null
-        try {
-            me = await spotifyApi.getMe();
-        } catch(err) {
-            console.error('Something went wrong!', err);
-            res.json(new ApiResponse(new ApiError(10, `User not logged in`)));
-            return;
-        }
+    app.get('/spotify/proposals/top', checkIfSpotifyAssigned, auth.required, async(req, res) => {
+        let spotifyApi = req.spotifyApi;
         spotifyApi
                 .getMyTopTracks({limit: req.query.limit})
                 .then((data) => {
@@ -507,10 +513,9 @@ app.get('/user/statistics', auth.required, async(req, res) => {
                                 authorId: el.artists[0].id,
                                 album: el.album.name,
                                 albumId: el.album.id}})
-                    //console.log(mapped);
-                    res.json(mapped);
+                    res.json(new ApiResponse(new ApiSuccess(mapped)));
                 },(err) => {
-                    console.error('Something went wrong!', err);
+                    LOG.error('Something went wrong!', err);
                     res.json(new ApiResponse(new ApiError(10, `User not logged in`)))
                 });
     })
@@ -522,10 +527,7 @@ app.get('/user/statistics', auth.required, async(req, res) => {
     DESCRIPTION: Gives propsals from gpsy, based on most frequently heard tracks
     ===============================================================================
 */
-    app.get('/spotify/proposals', auth.required, async (req: Request, res: Response) => {
-        let token = req.headers.authorization.split(' ');
-        let decodedToken = User.decodeJWT(token[1]);
-        let spotifyApi = API_INSTANCES.get(decodedToken.login)[0];
+    app.get('/spotify/proposals', checkIfSpotifyAssigned, auth.required, async (req: Request, res: Response) => {
         if(req.query.length === 0 || !req.query.limit) {
             res.json(new ApiResponse(new ApiError(400, `Wrong parameter, expected "limit"(type: int)`)))
             return;
@@ -533,7 +535,7 @@ app.get('/user/statistics', auth.required, async(req, res) => {
             res.json(new ApiResponse(new ApiError(400, `Wrong parameter input, expected integer <1;20>`)))
             return;
         }
-
+        let spotifyApi = req.spotifyApi; 
         let mostFrequent = null;
         let topTracks = null;
         try {
@@ -549,7 +551,7 @@ app.get('/user/statistics', auth.required, async(req, res) => {
                                                                 albumId: el.album.id}
                                                         })
         } catch(err) {
-            console.error('Something went wrong!', err);
+            LOG.error('Something went wrong!', err);
             res.json(new ApiResponse(new ApiError(10, `User not logged in`))); //TODO napisac ze problem z baza
             return;
         }
@@ -563,10 +565,15 @@ app.get('/user/statistics', auth.required, async(req, res) => {
                         min_popularity: 60
                     })
                 .then(function(data) {
-                let recommendations = data.body.tracks;
-                res.json(new ApiResponse(new ApiSuccess(recommendations.map(el => {return {id: el.id, name: el.name, author: el.artists[0].name, album: el.album.name}}))))
+                    let recommendations = data.body.tracks;
+                    res.json(new ApiResponse(new ApiSuccess(recommendations.map(el => {
+                                                                return {id: el.id, 
+                                                                        name: el.name, 
+                                                                        author: el.artists[0].name, 
+                                                                        album: el.album.name
+                                                                }}))));
                 }, function(err) {
-                    console.error('Something went wrong!', err);
+                    LOG.error('Something went wrong!', err);
                     res.json(new ApiResponse(new ApiError(10, `User not logged in`)));
                 });
     }); 
@@ -579,24 +586,16 @@ app.get('/user/statistics', auth.required, async(req, res) => {
     DESCRIPTION: Gives propsals from gpsy, based on most frequently heard tracks
     ===============================================================================
 */
-    app.get('/gpsy/proposals', auth.required, async (req: Request, res: Response) => {
-        let token = req.headers.authorization.split(' ');
-        let decodedToken = User.decodeJWT(token[1]);
-        let spotifyApi = API_INSTANCES.get(decodedToken.login)[0];
+    app.get('/gpsy/proposals', checkIfSpotifyAssigned, auth.required, async (req: Request, res: Response) => {
         try {
-            let user: User = await userRepository.findOne(decodedToken.login);
-            if(user) {
-                res.json(await recommendationService.recommendTracksFromGpsy(parseInt(req.query.limit), spotifyApi, user));
-            } else {
-                console.error(`[${new Date().toISOString()}] User ${decodedToken.login} not found in database`);
-                res.json(new ApiResponse(new ApiError(455, `User not found. Make sure you are registered!`)));
-            }
+            let user: User = req.user;
+            let spotifyApi = req.spotifyApi;
+            let response = await recommendationService.recommendTracksFromGpsy(parseInt(req.query.limit), spotifyApi, user);
+            res.json(response);  
         } catch(err) {
-            console.error('Something went wrong: ', err)
+            LOG.error('Something went wrong: ', err)
             res.json(new ApiResponse(new ApiError(450, `Something went wrong. Try again later`)));
         }
-    
-       
     }); 
 
 /*
@@ -609,7 +608,7 @@ app.get('/user/statistics', auth.required, async(req, res) => {
                 only by title but as well by author
     ===============================================================================
 */
-    app.get('/search/tracks', auth.required, async (req, res) => {
+    app.get('/search/tracks',checkIfSpotifyAssigned , auth.required, async (req, res) => {
         if(req.query.phrase === 0 || !req.query.phrase) {
             res.json(new ApiResponse(new ApiError(400, `Wrong parameter, expected [phrase](type: string)`)))
             return;
@@ -624,9 +623,7 @@ app.get('/user/statistics', auth.required, async(req, res) => {
         } else if(req.query.byAuthorName === 'true') {
             includeAuthor = true;
         }
-        let token = req.headers.authorization.split(' ');
-        let decodedToken = User.decodeJWT(token[1]);
-        let spotifyApi = API_INSTANCES.get(decodedToken.login)[0];
+        let spotifyApi = req.spotifyApi;
         let tracksNames = null;
         let tracksByArtist = null;
         try {
@@ -663,7 +660,7 @@ app.get('/user/statistics', auth.required, async(req, res) => {
             searchedTracks.sort((a, b) => b.popularity - a.popularity)
             res.json(new ApiResponse(new ApiSuccess(searchedTracks)));
         } catch(err) {
-            console.error('Something went wrong', err);
+            LOG.error('Something went wrong', err);
             res.json(new ApiResponse(new ApiError(450, `Something went wrong. Try again later`)))
         }
     })
@@ -676,50 +673,31 @@ app.get('/user/statistics', auth.required, async(req, res) => {
     DESCRIPTION: Retrieving user playlists from spotify, if id provided, the playlist with songs will be retrieved
     ===============================================================================
 */       
-    app.get('/spotify/playlists', auth.required, async (req, res) => {
-        let token = req.headers.authorization.split(' ');
-        let decodedToken = User.decodeJWT(token[1]);
-        let spotifyApi = API_INSTANCES.get(decodedToken.login)[0];
+    app.get('/spotify/playlists', checkIfSpotifyAssigned, auth.required, async (req, res) => {
+        let spotifyApi = req.spotifyApi;
+        let user: User = req.user;
         try {
-            let user: User = await userRepository.findOne(decodedToken.login);
-        
-            if(user) {
-                if(req.query.id) {
-                   try {
-                    let response = await SpotifyTracksRequestsService.retrieveUserPlaylistTracks(
-                        req.query.id
-                        ,user
-                        ,spotifyApi
-                        ,userPlaylistRepository
-                        ,spotifyTracksRepository
-                    )
-                    res.json(response);
-
-                   } catch(err) {
-                        console.error(`[${new Date().toISOString()}] User ${decodedToken.login} tracks retrieve from playlist internal error`, err);
-                        res.json(new ApiResponse(new ApiError(455, `Cannot retrieve the tracks properly. Try again later`)));  
-                   }
-                } else {
-                    try {
-                        let response = await SpotifyPlaylistRequestService.retrieveUserPlaylists(
-                            user,
-                            spotifyApi,
-                            userPlaylistRepository
-                        )
-                        res.json(response);
-                       } catch(err) {
-                            console.error(`[${new Date().toISOString()}] User ${decodedToken.login} tracks retrieve from playlist internal error`, err);
-                            res.json(new ApiResponse(new ApiError(455, `Cannot retrieve the tracks properly. Try again later`)));  
-                       }
-                }
+            if(req.query.id) {
+                let response = await SpotifyTracksRequestsService.retrieveUserPlaylistTracks(
+                    req.query.id
+                    ,user
+                    ,spotifyApi
+                    ,userPlaylistRepository
+                    ,spotifyTracksRepository
+                )
+                res.json(new ApiResponse(new ApiSuccess(response)));
             } else {
-                console.error(`[${new Date().toISOString()}] User ${decodedToken.login} not found in database`);
-                res.json(new ApiResponse(new ApiError(455, `User not found. Make sure you are registered!`)));
+                let response = await SpotifyPlaylistRequestService.retrieveUserPlaylists(
+                    user,
+                    spotifyApi,
+                    userPlaylistRepository
+                )
+                res.json(response);
             }
         } catch(err) {
-            console.error('Something went wrong: ', err)
-            res.json(new ApiResponse(new ApiError(450, `Something went wrong. Try again later`)));
-        }
+            LOG.error(`User ${user.login} tracks retrieve from playlist internal error`, err);
+            res.json(new ApiResponse(new ApiError(455, `internal server error, try again later`)));  
+       }
     });
 
 /*
@@ -737,14 +715,10 @@ app.get('/user/statistics', auth.required, async(req, res) => {
     }
     ===============================================================================
 */
-    app.post('/spotify/playlists/track/add', auth.required, async (req, res) => {
-        let token = req.headers.authorization.split(' ');
-        let decodedToken = User.decodeJWT(token[1]);
-        let spotifyApi = API_INSTANCES.get(decodedToken.login)[0];
+    app.post('/spotify/playlists/track/add', checkIfSpotifyAssigned, auth.required, async (req, res) => {
+        let spotifyApi = req.spotifyApi;
+        let user: User = req.user;
         try {
-            let user: User = await userRepository.findOne(decodedToken.login);
-            if(user) {
-                try {
                 let response = await SpotifyTracksRequestsService.addTracksToPlaylist(req.body.playlistId 
                                                                                 ,req.body.tracks
                                                                                 ,user
@@ -755,17 +729,9 @@ app.get('/user/statistics', auth.required, async(req, res) => {
                     res.status(201);
                 }
                 res.json(response);
-                } catch(err) {
-                    console.error(`[${new Date().toISOString()}] User ${decodedToken.login} tracks add internal error`, err);
-                    res.json(new ApiResponse(new ApiError(455, `Cannot add the tracks properly. Try again later`)));  
-                }
-            } else {
-                console.error(`[${new Date().toISOString()}] User ${decodedToken.login} not found in database`);
-                res.json(new ApiResponse(new ApiError(455, `User not found. Make sure you are registered!`)));
-            }
         } catch(err) {
-            console.error('Something went wrong: ', err)
-            res.json(new ApiResponse(new ApiError(450, `Something went wrong. Try again later`)));
+            LOG.error(`User ${user.login} tracks add internal error`, err)
+            res.json(new ApiResponse(new ApiError(450, `internal server error, try again later`)));
         }
     });
 
@@ -782,40 +748,28 @@ app.get('/user/statistics', auth.required, async(req, res) => {
     ===============================================================================
 */
     app.post('/spotify/playlists/add', auth.required, async (req, res) => {
-        let token = req.headers.authorization.split(' ');
-        let decodedToken = User.decodeJWT(token[1]);
-        let spotifyApi = API_INSTANCES.get(decodedToken.login)[0];
-        try {
-            let user: User = await userRepository.findOne(decodedToken.login);
-            if(user) {
-                try {
-                    let response = await SpotifyPlaylistRequestService.addSpotifyPlaylist(
-                        req.body.name
-                        ,req.body.public
-                        ,req.body.description ? req.body.description : ''
-                        ,spotifyApi
-                        ,user
-                        ,userPlaylistRepository
-                    )
-                    if(response.status === 0 && response.info instanceof ApiSuccess) {
-                        res.status(201);
-                        res.json(response);
-                    } else {
-                        console.error(`[${new Date().toISOString()}] User ${decodedToken.login} internal error`);
-                        res.json(response);
-                    }
-                } catch(err) {
-                    console.error(`[${new Date().toISOString()}] User ${decodedToken.login} internal error`, err);
-                    res.json(new ApiResponse(new ApiError(455, `Cannot add the playlist properly. Try again later`)));
+        let spotifyApi = req.spotifyApi;
+        let user: User = req.user;
+            try {
+                let response = await SpotifyPlaylistRequestService.addSpotifyPlaylist(
+                    req.body.name
+                    ,req.body.public
+                    ,req.body.description ? req.body.description : ''
+                    ,spotifyApi
+                    ,user
+                    ,userPlaylistRepository
+                )
+                if(response.status === 0 && response.info instanceof ApiSuccess) {
+                    res.status(201);
+                    res.json(response);
+                } else {
+                    LOG.error(`User ${user.login} adding playlist internal error ${response}`);
+                    res.json(response);
                 }
-            } else {
-                console.error(`[${new Date().toISOString()}] User ${decodedToken.login} not found in database`);
-                res.json(new ApiResponse(new ApiError(455, `User not found. Make sure you are registered!`)));
+            } catch(err) {
+                LOG.error(`User ${user.login} Cannot add the playlist properly`, err);
+                res.json(new ApiResponse(new ApiError(455, `internal server error, try again later`)));
             }
-        } catch(err) {
-            console.error('Something went wrong: ', err)
-            res.json(new ApiResponse(new ApiError(450, `Something went wrong. Try again later`)));
-        }
     });
 
 /*
@@ -828,90 +782,82 @@ app.get('/user/statistics', auth.required, async(req, res) => {
                 If name provided the name will be used to generate the pl.
     ===============================================================================
 */
-    app.get('/gpsy/playlists/recommend', auth.required, async (req, res) => {
-        let token = req.headers.authorization.split(' ');
-        let decodedToken = User.decodeJWT(token[1]);
-        let spotifyApi = API_INSTANCES.get(decodedToken.login)[0];
+    app.get('/gpsy/playlists/recommend', checkIfSpotifyAssigned, auth.required, async (req, res) => {
         if(req.query.name && (req.query.name.length < 5 || req.query.name.length > 20)) {
             res.json(new ApiResponse(new ApiError(400, `Wrong parameter, expected [name](type: string, length: min. 5, max 15)`)))
             return;
         }
-        
+        let spotifyApi = req.spotifyApi;
+        let user: User = req.user;
         try {
-            let user: User = await userRepository.findOne(decodedToken.login);
-            if(user) {
-                let playlistName = req.query.name ? req.query.name : config.recommendedPlaylistName;   
-                let playlist: RecommendedPlaylist = null;
-                if(!req.query.name) {
-                    playlist = await recommentedPlaylistRepository.findOne({userId: user.id, actual: true})
-                } else {
-                    playlist = await recommentedPlaylistRepository.findOne({userId: user.id, name: playlistName})
-                }
-                
-                if(!playlist) {
-                    //create new playlist
-                    try {
-                        playlist = await recommentedPlaylistRepository.save({
-                            userId: user.id,
-                            name: playlistName,
-                            description: 'The playlist created for gpsy proposals',
-                            trackQuantity: req.query.limit ? req.query.limit : 20,
-                            actual: true,
-                            public: false
-                        })
+            let playlistName = req.query.name ? req.query.name : config.recommendedPlaylistName;   
+            let playlist: RecommendedPlaylist = null;
+            if(!req.query.name) {
+                playlist = await recommentedPlaylistRepository.findOne({userId: user.id, actual: true})
+            } else {
+                playlist = await recommentedPlaylistRepository.findOne({userId: user.id, name: playlistName})
+            }
+            
+            if(!playlist) {
+                //create new playlist
+                try {
+                    playlist = await recommentedPlaylistRepository.save({
+                        userId: user.id,
+                        name: playlistName,
+                        description: 'The playlist created for gpsy proposals',
+                        trackQuantity: req.query.limit ? req.query.limit : 20,
+                        actual: true,
+                        public: false
+                    })
 
+                } catch(err) {
+                    LOG.error(`[${new Date().toISOString()}] User ${user.login} problem with saving new rec. playlist`, err);
+                    res.json(new ApiResponse(new ApiError(460, `Cannot save recommended playlist! Internal error`)));
+                }
+            } else if(req.query.limit) {
+                playlist.trackQuantity = req.query.limit;
+            }
+            
+            //check if exists playlist already and change status actual to false, if we do not want to modify actual
+            let exisitng: RecommendedPlaylist = await recommentedPlaylistRepository.findOne({userId: user.id, actual: true});
+            if(exisitng && playlist.spotifyPlaylistId !== exisitng.spotifyPlaylistId) {
+                exisitng.actual = false;
+                await recommentedPlaylistRepository.save(exisitng);
+            }
+
+            try {
+                let apiResponse = await recommendationService.recommendTracksFromGpsy(playlist.trackQuantity, spotifyApi, user);
+                
+                if(apiResponse.status === 0 && apiResponse.info instanceof ApiSuccess) {
+
+                    let gpsyRecommendations = apiResponse.info.data;
+                    let toInsertTracks: SpotifyTrack[] = [];
+                    for(let track of gpsyRecommendations) {
+                        let dbTrack: SpotifyTrack = await spotifyTracksRepository.findOne(track.trackId);
+                        if(!dbTrack) {
+                            dbTrack = await spotifyTracksRepository.save(track);
+                        }
+                        toInsertTracks.push(dbTrack);
+                    }
+                    playlist.tracks = toInsertTracks;
+                    playlist.actual = true;
+                    try {
+                        await recommentedPlaylistRepository.save(playlist);
+                        res.json(new ApiResponse(new ApiSuccess(playlist)));
                     } catch(err) {
-                        console.error(`[${new Date().toISOString()}] User ${decodedToken.login} problem with saving new rec. playlist`, err);
+                        LOG.error(`[${new Date().toISOString()}] User ${user.login} cannot save new recommended playlist`, err);
                         res.json(new ApiResponse(new ApiError(460, `Cannot save recommended playlist! Internal error`)));
                     }
-                } else if(req.query.limit) {
-                    playlist.trackQuantity = req.query.limit;
-                }
-                
-                //check if exists playlist already and change status actual to false, if we do not want to modify actual
-                let exisitng: RecommendedPlaylist = await recommentedPlaylistRepository.findOne({userId: user.id, actual: true});
-                if(exisitng && playlist.spotifyPlaylistId !== exisitng.spotifyPlaylistId) {
-                    exisitng.actual = false;
-                    await recommentedPlaylistRepository.save(exisitng);
-                }
-
-                try {
-                    let apiResponse = await recommendationService.recommendTracksFromGpsy(playlist.trackQuantity, spotifyApi, user);
-                    
-                    if(apiResponse.status === 0 && apiResponse.info instanceof ApiSuccess) {
-
-                        let gpsyRecommendations = apiResponse.info.data;
-                        let toInsertTracks: SpotifyTrack[] = [];
-                        for(let track of gpsyRecommendations) {
-                            let dbTrack: SpotifyTrack = await spotifyTracksRepository.findOne(track.trackId);
-                            if(!dbTrack) {
-                                dbTrack = await spotifyTracksRepository.save(track);
-                            }
-                            toInsertTracks.push(dbTrack);
-                        }
-                        playlist.tracks = toInsertTracks;
-                        playlist.actual = true;
-                        try {
-                            await recommentedPlaylistRepository.save(playlist);
-                            res.json(new ApiResponse(new ApiSuccess(playlist)));
-                        } catch(err) {
-                            console.error(`[${new Date().toISOString()}] User ${decodedToken.login} cannot save new recommended playlist`, err);
-                            res.json(new ApiResponse(new ApiError(460, `Cannot save recommended playlist! Internal error`)));
-                        }
-                    } else {
-                        console.error(`[${new Date().toISOString()}] User ${decodedToken.login} problem with retrieving recommendations for playlist`);
-                        res.json(new ApiResponse(new ApiError(460, `Cannot retrieve recommended tracks for playlist! Internal error`)));
-                    }
-                } catch(err) {
-                    console.error(`[${new Date().toISOString()}] User ${decodedToken.login} problem with retrieving recommendations for playlist`, err);
+                } else {
+                    LOG.error(`[${new Date().toISOString()}] User ${user.login} problem with retrieving recommendations for playlist`);
                     res.json(new ApiResponse(new ApiError(460, `Cannot retrieve recommended tracks for playlist! Internal error`)));
                 }
-            } else {
-                console.error(`[${new Date().toISOString()}] User ${decodedToken.login} not found in database`);
-                res.json(new ApiResponse(new ApiError(455, `User not found. Make sure you are registered!`)));
+            } catch(err) {
+                LOG.error(`[${new Date().toISOString()}] User ${user.login} problem with retrieving recommendations for playlist`, err);
+                res.json(new ApiResponse(new ApiError(460, `Cannot retrieve recommended tracks for playlist! Internal error`)));
             }
         } catch(err) {
-            console.error('Something went wrong: ', err)
+            LOG.error('Something went wrong: ', err)
             res.json(new ApiResponse(new ApiError(450, `Something went wrong. Try again later`)));
         }
     });
@@ -924,75 +870,30 @@ app.get('/user/statistics', auth.required, async(req, res) => {
                 If name provided the name will be used to generate the pl.
     ===============================================================================
 */
-    app.post('/gpsy/playlists/send-actual', auth.required, async (req, res) => {
-        let token = req.headers.authorization.split(' ');
-        let decodedToken = User.decodeJWT(token[1]);
-        let spotifyApi = API_INSTANCES.get(decodedToken.login)[0];  
+    app.post('/gpsy/playlists/send-actual', checkIfSpotifyAssigned, auth.required, async (req, res) => {
+        let spotifyApi = req.spotifyApi;
+        let user: User = req.user;
         try {
-            let user: User = await userRepository.findOne(decodedToken.login);
-            if(user) {
-                let playlist: RecommendedPlaylist = await recommentedPlaylistRepository.findOne({userId: user.id, actual: true})
-                if(playlist) {
-                    if(!playlist.sentToSpotify) {
-                        try {
-                            let response = await SpotifyPlaylistRequestService.addSpotifyPlaylist(
-                                playlist.name
-                                ,true
-                                ,playlist.description ? playlist.description : ''
-                                ,spotifyApi
-                                ,user
-                                ,userPlaylistRepository
-                            )
-                            if(response.status === 0 && response.info instanceof ApiSuccess) {
-                                playlist.sentToSpotify = true;
-                                playlist.sentToSpotifyDate = new Date();
-                                playlist.spotifyPlaylistId = response.info.data.spotifyPlaylistId;
-                                await recommentedPlaylistRepository.save(playlist);
-                                res.status(201);
-                            } else {
-                                res.json(response);
-                                return;
-                            }
-                            try {
-                                let response = await SpotifyTracksRequestsService.addTracksToPlaylist(
-                                    playlist.spotifyPlaylistId
-                                    ,playlist.tracks
-                                    ,user
-                                    ,spotifyApi
-                                    ,userPlaylistRepository
-                                    ,spotifyTracksRepository
-                                )
-                                if(response.status === 0 && response.info instanceof ApiSuccess) {
-                                    res.status(201);
-                                    console.info(`[${new Date().toISOString()}] ${user.email} sent recommended playlist ${playlist.spotifyPlaylistId} to spotify`)
-                                    res.json(new ApiResponse(new ApiSuccess(playlist)))
-                                } else {
-                                    res.json(response)
-                                }
-                            } catch(err) {
-                                console.error(`[${new Date().toISOString()}] User ${decodedToken.login} tracks add internal error`, err);
-                                res.json(new ApiResponse(new ApiError(455, `Cannot add the tracks properly. Try again later`)));
-                            }
-                        } catch(err) {
-                            console.error(`[${new Date().toISOString()}] User ${decodedToken.login} playlist add internal error`, err);
-                            res.json(new ApiResponse(new ApiError(455, `Cannot add the playlist properly. Try again later`)));
-                        }
-                    } else {
-                        try {
-                            let currPlaylist = await userPlaylistRepository.findOne(playlist.spotifyPlaylistId);
-                            let currPlaylistTracks = currPlaylist.tracks.map(el => {
-                                return {uri: `spotify:track:${el.trackId}`}
-                            })
-                            if(currPlaylistTracks.length) {
-                                let response = await spotifyApi.removeTracksFromPlaylist(playlist.spotifyPlaylistId, currPlaylistTracks);
-                                if(response.statusCode && response.statusCode === 200) {
-                                    currPlaylist.tracks = [];
-                                    await userPlaylistRepository.save(currPlaylist);
-                                }
-                            }
-                        } catch(err) {
-                            console.error(`[${new Date().toISOString()}] ${user.email} cannot delete current tracks for ${playlist.spotifyPlaylistId} from spotify`, err)
-                            res.json(new ApiResponse(new ApiError(455, `Cannot delete current tracks for ${playlist.spotifyPlaylistId} from spotify`)))
+            let playlist: RecommendedPlaylist = await recommentedPlaylistRepository.findOne({userId: user.id, actual: true})
+            if(playlist) {
+                if(!playlist.sentToSpotify) {
+                    try {
+                        let response = await SpotifyPlaylistRequestService.addSpotifyPlaylist(
+                            playlist.name
+                            ,true
+                            ,playlist.description ? playlist.description : ''
+                            ,spotifyApi
+                            ,user
+                            ,userPlaylistRepository
+                        )
+                        if(response.status === 0 && response.info instanceof ApiSuccess) {
+                            playlist.sentToSpotify = true;
+                            playlist.sentToSpotifyDate = new Date();
+                            playlist.spotifyPlaylistId = response.info.data.spotifyPlaylistId;
+                            await recommentedPlaylistRepository.save(playlist);
+                            res.status(201);
+                        } else {
+                            res.json(response);
                             return;
                         }
                         try {
@@ -1006,26 +907,63 @@ app.get('/user/statistics', auth.required, async(req, res) => {
                             )
                             if(response.status === 0 && response.info instanceof ApiSuccess) {
                                 res.status(201);
+                                LOG.info(`[${new Date().toISOString()}] ${user.email} sent recommended playlist ${playlist.spotifyPlaylistId} to spotify`)
+                                res.json(new ApiResponse(new ApiSuccess(playlist)))
+                            } else {
+                                res.json(response)
                             }
-                            console.info(`[${new Date().toISOString()}] ${user.email} sent recommended tracks for ${playlist.spotifyPlaylistId} to spotify`)
-                            res.json(response)
                         } catch(err) {
-                            console.error(`[${new Date().toISOString()}] User ${decodedToken.login} tracks add internal error`, err);
+                            LOG.error(`[${new Date().toISOString()}] User ${user.login} tracks add internal error`, err);
                             res.json(new ApiResponse(new ApiError(455, `Cannot add the tracks properly. Try again later`)));
                         }
+                    } catch(err) {
+                        LOG.error(`[${new Date().toISOString()}] User ${user.login} playlist add internal error`, err);
+                        res.json(new ApiResponse(new ApiError(455, `Cannot add the playlist properly. Try again later`)));
                     }
                 } else {
-                    console.error(`[${new Date().toISOString()}] Playlist ${req.query.name} not found in database`);
-                    res.json(new ApiResponse(new ApiError(455, `Playlis not found. Make sure you have one!`)));
-                }    
-                
+                    try {
+                        let currPlaylist = await userPlaylistRepository.findOne(playlist.spotifyPlaylistId);
+                        let currPlaylistTracks = currPlaylist.tracks.map(el => {
+                            return {uri: `spotify:track:${el.trackId}`}
+                        })
+                        if(currPlaylistTracks.length) {
+                            let response = await spotifyApi.removeTracksFromPlaylist(playlist.spotifyPlaylistId, currPlaylistTracks);
+                            if(response.statusCode && response.statusCode === 200) {
+                                currPlaylist.tracks = [];
+                                await userPlaylistRepository.save(currPlaylist);
+                            }
+                        }
+                    } catch(err) {
+                        LOG.error(`[${new Date().toISOString()}] ${user.email} cannot delete current tracks for ${playlist.spotifyPlaylistId} from spotify`, err)
+                        res.json(new ApiResponse(new ApiError(455, `cannot delete current tracks for ${playlist.spotifyPlaylistId} from spotify`)))
+                        return;
+                    }
+                    try {
+                        let response = await SpotifyTracksRequestsService.addTracksToPlaylist(
+                            playlist.spotifyPlaylistId
+                            ,playlist.tracks
+                            ,user
+                            ,spotifyApi
+                            ,userPlaylistRepository
+                            ,spotifyTracksRepository
+                        )
+                        if(response.status === 0 && response.info instanceof ApiSuccess) {
+                            res.status(201);
+                        }
+                        LOG.info(`${user.email} sent recommended tracks for ${playlist.spotifyPlaylistId} to spotify`)
+                        res.json(response)
+                    } catch(err) {
+                        LOG.error(`User ${user.login} tracks add internal error`, err);
+                        res.json(new ApiResponse(new ApiError(455, `internal server error, try again later`)));
+                    }
+                }
             } else {
-                console.error(`[${new Date().toISOString()}] User ${decodedToken.login} not found in database`);
-                res.json(new ApiResponse(new ApiError(455, `User not found. Make sure you are registered!`)));
-            }
+                LOG.error(`[${new Date().toISOString()}] Playlist ${req.query.name} not found in database`);
+                res.json(new ApiResponse(new ApiError(455, `playlis not found, make sure you have one`)));
+            }    
         } catch(err) {
-            console.error('Something went wrong: ', err)
-            res.json(new ApiResponse(new ApiError(450, `Something went wrong. Try again later`)));
+            LOG.error('Something went wrong: ', err)
+            res.json(new ApiResponse(new ApiError(450, `internal server error, try again later`)));
         }
     });
 
@@ -1034,9 +972,15 @@ app.get('/user/statistics', auth.required, async(req, res) => {
           res.status(401).json(new ApiResponse(new ApiError(1, err.message)));
         }
       });
+
+    app.use((req, res) => {
+        res.status(404);
+        res.json(new ApiResponse(new ApiError(404, `path not found: ${req.path}`)))
+    })
     // START EXPRESS APP
+
     app.listen(process.env.PORT || 8080, () => {
         LOG.info(`App listening at port ${process.env.PORT || 8080}`);
     });
 
-}).catch(error => console.info(error));
+}).catch(error => LOG.info(error));
