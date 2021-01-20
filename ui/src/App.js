@@ -1,6 +1,8 @@
 import './App.css';
 import {makeStyles } from '@material-ui/core/styles';
 import Dashboard from './components/Dashboard';
+import Login from './login/Login';
+import Register from './register/Register';
 
 const useStyles = makeStyles(theme => ({
   darkPalette: {
@@ -12,7 +14,10 @@ function App() {
   const classes = useStyles();
   return (
     <div className={classes.darkPalette}>
-        <Dashboard></Dashboard>
+        {/* <Login></Login> */}
+        <Register></Register>
+        {/* <Dashboard></Dashboard> */}
+     
     </div>
   );
 }
