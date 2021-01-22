@@ -1,7 +1,9 @@
-import React, { useEffect } from 'react'
+import React, { Fragment, useEffect } from 'react'
 import { Button, Checkbox, FormControlLabel, FormHelperText, makeStyles, Paper, TextField, Typography } from '@material-ui/core'
 import ProgressBar from '../login/ProgressBar'
 import axios from '../axios';
+import { useHistory } from 'react-router-dom';
+import RegisterSuccess from './RegisterSuccess';
 
 const useStyles = makeStyles(theme => ({
     root: {
@@ -52,6 +54,7 @@ const useStyles = makeStyles(theme => ({
 
 const Register = () => {
     const classes = useStyles();
+    const history = useHistory();
     const [registerForm, setForm]= React.useState({
         login: {value: '', valid: true, validText: 'Login powinien mieć minimum 6 znaków'},
         email: {value: '', valid: true, validText: 'Nieprawidłowy format adresu email'},
@@ -60,7 +63,7 @@ const Register = () => {
     });
     const [loading, setLoading] = React.useState(false);
     const [registerText, setRegisterText] = React.useState(`Wypełnij dane rejestracyjne`);
-
+    const [registered, setRegistered] = React.useState(false);
     const handleChange = (event) => {
         setForm({ ...registerForm, [event.target.name]: {...registerForm[event.target.name], value: event.target.value}});
     };
@@ -108,11 +111,15 @@ const Register = () => {
                 switch(res.status) {
                     case 200: setRegisterText( res.data && res.data.info && res.data.info.errorCode === 1 && res.data.info.message[0].error ? res.data.info.message[0].error : defaultMessage);
                     break;
-                    case 201: setRegisterText(res.data.info.data.token); 
+                    case 201: {
+                        setRegisterText(res.data.info.data.token);
+                        setRegistered(true);
+                    }
                     break;
                     default: setRegisterText(defaultMessage); 
                 }
                 console.log(res);
+                
             })
             .catch(err => {
                 let defaultMessage = 'Something went wrong. Try to register later.';
@@ -131,8 +138,8 @@ const Register = () => {
 
     return (
         <form className={classes.root}>
-        <Paper elevation={3} className={classes.paper} > 
-            <Typography variant="h3" className={classes.header}>Rejestracja</Typography>
+        <Paper elevation={20} className={classes.paper} > 
+            {registered ? <RegisterSuccess login={registerForm.login.value}/> : <Fragment><Typography variant="h3" className={classes.header}>Rejestracja</Typography>
             <TextField
                 required
                 error={!registerForm.login.valid}
@@ -191,6 +198,7 @@ const Register = () => {
                 { loading ? <ProgressBar></ProgressBar> :  <FormHelperText>{registerText}</FormHelperText>}
             </div>
             <Button onClick={register} color="primary" variant="outlined" style={{width: '80%'}}>Zarejestruj</Button>
+            </Fragment>}
         </Paper>
     </form>
     )

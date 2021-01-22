@@ -10,7 +10,7 @@ const useStyles = makeStyles(theme => ({
         flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
-        background: 'radial-gradient(circle, rgba(255,220,0,1) 10%, rgba(87,121,9,1) 66%, rgba(46,46,46,1) 100%)'
+        background: 'radial-gradient(circle, rgba(255,245,157,1) 30%, rgba(102, 187, 106,1) 70%, rgba(46,46,46,1) 100%)'
     },
     paper: {
         margin: 0,
@@ -42,7 +42,7 @@ const Login = () => {
       };
     return (
         <form className={classes.root}>
-            <Paper elevation={3} className={classes.paper} > 
+            <Paper elevation={20} className={classes.paper} > 
                 <Typography variant="h3" className={classes.header}>gpsy</Typography>
                 <TextField
                     id="outlined-login-input"

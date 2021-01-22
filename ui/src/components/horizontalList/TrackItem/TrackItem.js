@@ -29,7 +29,7 @@ const TrackItem = (props) => {
     const classes = useStyles();
     
     return (
-        <Paper elevation={1} className={classes.paper}>
+        <Paper elevation={10} className={classes.paper}>
             <div style={{width: '80%'}}>
                 <Typography variant="subtitle1">{props.name}</Typography>
                 <Typography variant="subtitle2">{props.author}</Typography>

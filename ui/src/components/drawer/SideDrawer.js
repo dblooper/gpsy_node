@@ -51,14 +51,14 @@ const useStyles = makeStyles((theme) => ({
     alignItems: 'center',
     height: '100vh',
     marginTop: '0.5rem',
-    boxShadow: `0 0 5px 0 ${theme.palette.text.primary}`
+    boxShadow: `0 0 20px ${theme.palette.background.default}`
   },
   mobileDrawerPaper: {
     width: '50%',
     position: 'relative',
     alignItems: 'center',
     marginTop: '0.5rem',
-    boxShadow: `0 0 10px 0 ${theme.palette.text.primary}`
+    boxShadow: `0 0 20px ${theme.palette.background.default}`
   },
 }));
 

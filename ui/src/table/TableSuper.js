@@ -328,7 +328,7 @@ export default function TableSuper() {
 </TableContainer>)
 
   return (
-      <Paper elevation={2} className={classes.paper}>
+      <Paper elevation={8} className={classes.paper}>
         <Switcher numSelected={selected.length}/>
         {trackTable}
         <TablePagination

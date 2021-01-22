@@ -16,7 +16,7 @@ const useStyles = makeStyles((theme) => ({
     backgroundColor: deepOrange[200],
     width: '10rem',
     height: '10rem',
-    boxShadow: '0 0 10px 0 #ccc'
+    boxShadow: `0 0 20px ${theme.palette.background.default}`
   },
 }));
 
