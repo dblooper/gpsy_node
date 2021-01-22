@@ -22,6 +22,7 @@ import jwt from 'express-jwt';
 import { PassportConfig } from "./config/PassportConfig";
 import { SpotifyPlaylistRequestService } from "./service/SpotifyPlaylistRequestService";
 import {factory} from './config/LoggerConfig'
+import cors from 'cors'
 const LOG = factory.getLogger("index.Main");
 const passport = require('passport');
 
@@ -104,6 +105,13 @@ const checkRegistrationBody = (req, res, next) => {
             error1: 'Wrong username or password'
         })
     } 
+
+    if(!req.body.email) {
+        errors.push({
+            error: 'No email provided'
+        })
+    } 
+
     if(req.body.username.length < 6) {
         errors.push({
             error: 'Username length too short. At least 6 characters required'
@@ -116,9 +124,15 @@ const checkRegistrationBody = (req, res, next) => {
         })
     }
 
-    if(! /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])[A-Za-z0-9]{8,20}$/.test(req.body.password)) {
+    if(! /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])[0-9A-Za-z!@#$%^&*]{8,20}$/.test(req.body.password)) {
         errors.push({
             error: 'Password does not comply with rule: at least 1 small letter, 1 digit, 1 capital letter'
+        })
+    }
+
+    if(! /[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?/.test(req.body.email)) {
+        errors.push({
+            error: 'Email does not comply with rules'
         })
     }
     
@@ -177,6 +191,7 @@ createConnection().then(async connection => {
    
     app.use(bodyParser.json());
     app.use(bodyParser.urlencoded({extended: false}));
+    app.use(cors());
     app.use('/proposals/top', limitParamCheck);
     app.use('/spotify/proposals/top', limitParamCheck);
     app.use('/gpsy/proposals', limitParamCheck);
@@ -252,10 +267,12 @@ createConnection().then(async connection => {
             if(!user) {
                 user = new User();
                 user.login = req.body.username;
+                user.registrationEmail = req.body.email;
                 let firstToken = user.generateJWT();
                 await user.setPassword(req.body.password);
                 await userRepository.save(user);
-                LOG.info(`${new Date().toISOString()}: New user ${req.body.username} registered!`);
+                LOG.info(`New user ${req.body.username} registered!`);
+                res.status(201);
                 res.json(new ApiResponse(new ApiSuccess({
                                                             username: user.login,
                                                             spotifyId: user.id,
@@ -263,7 +280,7 @@ createConnection().then(async connection => {
                                                         })))
             } else {
                 let message = {error: `User ${user.login} exists!`}
-                res.json(new ApiResponse(new ApiError(1, message)));
+                res.json(new ApiResponse(new ApiError(1, [message])));
             }
         } catch(err) {
             LOG.error(`Error from registration`, err)

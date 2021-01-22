@@ -19,6 +19,9 @@ export class User {
     email: string;
 
     @Column({default: null})
+    registrationEmail: string;
+
+    @Column({default: null})
     name: string;
 
     @Column({default: 0})
