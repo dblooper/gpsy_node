@@ -10,6 +10,9 @@ const useStyles = makeStyles((theme) => ({
     '& > *': {
       margin: theme.spacing(1),
     },
+    '&:hover': {
+      cursor: 'pointer'
+    }
   },
   purple: {
     color: theme.palette.getContrastText(deepOrange[200]),
@@ -22,11 +25,17 @@ const useStyles = makeStyles((theme) => ({
 
 export default function LetterAvatar(props) {
   const classes = useStyles();
-
+  const name = props.name ? props.name : '';
+  let parsedName = name.split(' ');
+  if(parsedName.length === 1) {
+    parsedName = parsedName.join('').slice(0,2).toUpperCase();
+  } else {
+    parsedName = parsedName.map(el => el[0]).join('').toUpperCase();
+  }
   return (
     <div className={classes.root}>
       <Avatar className={classes.purple}><Typography variant="h2" noWrap>
-            OP
+            {parsedName}
           </Typography></Avatar>
     </div>
   );

@@ -34,10 +34,9 @@ const useStyles = makeStyles(theme => ({
 
 export default function CenteredTabs(props) {
   const classes = useStyles();
-  const [value, setValue] = React.useState(1);
-  const handleChange = (event, newValue) => {
-    setValue(newValue);
-  };
+  // const handleChange = (event, newValue) => {
+  //   setValue(newValue);
+  // };
 
   const[selected, setSelected] = React.useState(false);
 
@@ -57,9 +56,10 @@ export default function CenteredTabs(props) {
                                   color="inherit" 
                                   variant="subtitle1" >{props.numSelected} zaznaczone
                       </Typography>
-                    </div>) : (<Tabs
-          value={value}
-          onChange={handleChange}
+                    </div>) : 
+        (<Tabs
+          value={props.pageRender}
+          onChange={(event, newValue) => props.onChangeClick(newValue)}
           indicatorColor="secondary"
           textColor="secondary"
           centered

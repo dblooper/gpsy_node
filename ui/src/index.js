@@ -6,6 +6,10 @@ import reportWebVitals from './reportWebVitals';
 import { createMuiTheme, ThemeProvider } from '@material-ui/core';
 import { brown, yellow, green } from '@material-ui/core/colors';
 import {BrowserRouter} from 'react-router-dom'
+import {createStore} from 'redux';
+import allReducers from './reducers/index'
+import {Provider} from 'react-redux';
+
 const theme = createMuiTheme({
   palette: {
     type: 'dark',
@@ -22,14 +26,21 @@ const theme = createMuiTheme({
   },
 });
 
+const store = createStore(allReducers, 
+  /* preloadedState, */
+  window.__REDUX_DEVTOOLS_EXTENSION__ && window.__REDUX_DEVTOOLS_EXTENSION__()
+  );
+
 ReactDOM.render(
-  <BrowserRouter>
-    <React.StrictMode>
-      <ThemeProvider theme={theme}>
-        <App />
-      </ThemeProvider>
-    </React.StrictMode>
-  </BrowserRouter>
+    <Provider store={store}>
+      <BrowserRouter>
+        <React.StrictMode>
+          <ThemeProvider theme={theme}>
+            <App />
+          </ThemeProvider>
+        </React.StrictMode>
+      </BrowserRouter>
+    </Provider>
   ,
   document.getElementById('root')
 );

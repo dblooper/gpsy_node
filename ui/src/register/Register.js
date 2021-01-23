@@ -14,7 +14,7 @@ const useStyles = makeStyles(theme => ({
         flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
-        background: 'radial-gradient(circle, rgba(255,220,0,1) 10%, rgba(87,121,9,1) 66%, rgba(46,46,46,1) 100%)'
+        background: 'radial-gradient(circle, rgba(255,245,157,1) 30%, rgba(102, 187, 106,1) 70%, rgba(46,46,46,1) 100%)'
     },
     paper: {
         margin: 0,
@@ -97,6 +97,7 @@ const Register = () => {
     }
 
     const register = () => {
+        setRegistered(true); return;
         if(validateInput(registerForm)) {
             setLoading(true);
             let authorities = {
@@ -132,8 +133,7 @@ const Register = () => {
                 console.log(err);
             })
         }
-        
-        // alert(JSON.stringify(registerForm));
+
     }
 
     return (

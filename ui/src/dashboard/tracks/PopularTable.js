@@ -16,31 +16,16 @@ import Paper from '@material-ui/core/Paper';
 import Checkbox from '@material-ui/core/Checkbox';
 import IconButton from '@material-ui/core/IconButton';
 import Tooltip from '@material-ui/core/Tooltip';
-import FormControlLabel from '@material-ui/core/FormControlLabel';
-import Switch from '@material-ui/core/Switch';
 import DeleteIcon from '@material-ui/icons/Delete';
 import FilterListIcon from '@material-ui/icons/FilterList';
-import Switcher from '../components/switcher/Switcher.js'
+import Switcher from '../../components/switcher/Switcher.js'
+import { useSelector } from 'react-redux';
+import axiosToken from 'axios'
+import axios from '../../axios'
 
 function createData(name, author, lastPlayed, popularity) {
   return { name,author, lastPlayed, popularity };
 }
-
-const rows = [
-  createData('sohfiasadsadsaddsfdsfdsfdfasdasdsadasdsadsd sdfsdfasshfgiph', "sohfiasadsaad fssadfdsadsdasshfgiph", new Date().toISOString().replace(/[ZT]/g, ' ').slice(0,19), 67),
-  createData('Donut', 452, 25.0, 51, 4.9),
-  createData('Eclair', 262, 16.0, 24, 6.0),
-  createData('Frozen yoghurt', 159, 6.0, 24, 4.0),
-  createData('Gingerbread', 356, 16.0, 49, 3.9),
-  createData('Honeycomb', 408, 3.2, 87, 6.5),
-  createData('Ice cream sandwich', 237, 9.0, 37, 4.3),
-  createData('Jelly Bean', 375, 0.0, 94, 0.0),
-  createData('KitKat', 518, 26.0, 65, 7.0),
-  createData('Lollipop', 392, 0.2, 98, 0.0),
-  createData('Marshmallow', 318, 0, 81, 2.0),
-  createData('Nougat', 360, 19.0, 9, 37.0),
-  createData('Oreo', 437, 18.0, 63, 4.0),
-];
 
 function descendingComparator(a, b, orderBy) {
   if (b[orderBy] < a[orderBy]) {
@@ -74,13 +59,19 @@ const headCells = [
   { id: 'lastPlayed', numeric: false, disablePadding: false, label: 'Data i czas' },
   { id: 'popularity', numeric: false, disablePadding: false, label: 'Odtworzono ogółem' },
 ];
+const recentTracksheadCells = [
+  { id: 'nameR', numeric: false, disablePadding: true, label: 'Nazwa' },
+  { id: 'authorR', numeric: false, disablePadding: false, label: 'Autor' },
+  { id: 'lastPlayedR', numeric: false, disablePadding: false, label: 'Data i czas' },
+];
 
 function EnhancedTableHead(props) {
-  const { classes, onSelectAllClick, order, orderBy, numSelected, rowCount, onRequestSort } = props;
+  const { classes, onSelectAllClick, order, orderBy, numSelected, rowCount, onRequestSort, renderTable } = props;
   const createSortHandler = (property) => (event) => {
     onRequestSort(event, property);
   };
 
+  let headerCells = renderTable === 1 ? headCells : renderTable === 0 ? recentTracksheadCells : null;
   return (
     <TableHead>
       <TableRow>
@@ -92,7 +83,7 @@ function EnhancedTableHead(props) {
             inputProps={{ 'aria-label': 'select all desserts' }}
           />
         </TableCell>
-        {headCells.map((headCell) => (
+        {headerCells.map((headCell) => (
           <TableCell
             key={headCell.id}
             align={headCell.numeric ? 'right' : 'left'}
@@ -211,13 +202,53 @@ const useStyles = makeStyles((theme) => ({
   },
 }));
 
-export default function TableSuper() {
+export default function PopularTable() {
   const classes = useStyles();
   const [order, setOrder] = React.useState('asc');
   const [orderBy, setOrderBy] = React.useState('calories');
   const [selected, setSelected] = React.useState([]);
   const [page, setPage] = React.useState(0);
   const [rowsPerPage, setRowsPerPage] = React.useState(5);
+
+  const [pageRender, setPageRender] = React.useState(1)
+
+  const userMeta = useSelector(state => state.logged);
+  const cancelTokenSource = axiosToken.CancelToken.source()
+  const [render, setRender] = React.useState(false);
+  const [rows, setRows] = React.useState([]);
+  
+  React.useEffect(() => {
+    axios.get('/gpsy/popular?limit=20',
+    {headers: {
+      Authorization: 'Bearer ' + userMeta.token //the token is a variable which holds the token
+    }},
+    {
+      cancelToken: cancelTokenSource.token
+    }
+    )
+    .then(data => {
+      let newRows = [];
+      for(let el of data.data.info.data.recentTracks) {
+        newRows.push(createData(el.name, el.author, el.recentlyPlayed.replace(/[ZT]/g, ' ').slice(0,19) ,el.popularity))   
+      }
+      setRows(newRows);
+      setRender(true);
+      console.log(rows);
+    })
+    .catch(err => {
+      console.log(err)
+    })
+    return () => {
+      cancelTokenSource.cancel();
+    }
+  }, [userMeta])
+
+  const tabChangeHandler = (value) => {
+    if(pageRender !== Number.parseInt(value)) {
+      setPageRender(value);
+      console.log(value)
+    }
+  }
 
   const handleRequestSort = (event, property) => {
     const isAsc = orderBy === property && order === 'asc';
@@ -268,69 +299,138 @@ export default function TableSuper() {
   const emptyRows = rowsPerPage - Math.min(rowsPerPage, rows.length - page * rowsPerPage);
 
   const trackTable = (        
-  <TableContainer style={{overflow: 'scroll', height: '80%'}}>
-  <Table
-    className={classes.table}
-    aria-labelledby="tableTitle"
-    size='small'
-    aria-label="enhanced table"
-    stickyHeader
-    style={{tableLayout: 'auto'}}
-  >
-    <EnhancedTableHead
-      classes={classes}
-      numSelected={selected.length}
-      order={order}
-      orderBy={orderBy}
-      onSelectAllClick={handleSelectAllClick}
-      onRequestSort={handleRequestSort}
-      rowCount={rows.length}
-    />
-    <TableBody>
-      {stableSort(rows, getComparator(order, orderBy))
-        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-        .map((row, index) => {
-          const isItemSelected = isSelected(row.name);
-          const labelId = `enhanced-table-checkbox-${index}`;
+      <TableContainer style={{overflow: 'scroll', height: '80%'}}>
+      {render ? <Table
+        className={classes.table}
+        aria-labelledby="tableTitle"
+        size='small'
+        aria-label="enhanced table"
+        stickyHeader
+        style={{tableLayout: 'auto'}}
+      >
+        <EnhancedTableHead
+          classes={classes}
+          numSelected={selected.length}
+          order={order}
+          orderBy={orderBy}
+          onSelectAllClick={handleSelectAllClick}
+          onRequestSort={handleRequestSort}
+          rowCount={rows.length}
+          renderTable = {pageRender}
+        />
+        <TableBody>
+          {stableSort(rows, getComparator(order, orderBy))
+            .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+            .map((row, index) => {
+              const isItemSelected = isSelected(row.name);
+              const labelId = `enhanced-table-checkbox-${index}`;
 
-          return (
-            <TableRow
-              hover
-              onClick={(event) => handleClick(event, row.name)}
-              role="checkbox"
-              aria-checked={isItemSelected}
-              tabIndex={-1}
-              key={row.name}
-              selected={isItemSelected}
-            >
-              <TableCell padding="checkbox">
-                <Checkbox
-                  checked={isItemSelected}
-                  inputProps={{ 'aria-labelledby': labelId }}
-                />
-              </TableCell>
-              <TableCell component="th" id={labelId} scope="row" padding="none">
-                <p style={{width: '12rem', overflowX: 'wrap', wordWrap: 'break-word'}}>{row.name}</p>
-              </TableCell>
-              <TableCell padding="none" align="left"><p style={{width: '10rem', overflowX: 'wrap', wordWrap: 'break-word'}}>{row.author}</p></TableCell>
-              <TableCell padding="none" align="left"><p style={{width: '9rem', overflowX: 'wrap', wordWrap: 'break-word'}}>{row.lastPlayed}</p></TableCell>
-              <TableCell padding="none" align="left"><p style={{width: '2rem', overflowX: 'wrap', wordWrap: 'break-word'}}>{row.popularity}</p></TableCell>
+              return (
+                <TableRow
+                  hover
+                  onClick={(event) => handleClick(event, row.name)}
+                  role="checkbox"
+                  aria-checked={isItemSelected}
+                  tabIndex={-1}
+                  key={row.name}
+                  selected={isItemSelected}
+                >
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      checked={isItemSelected}
+                      inputProps={{ 'aria-labelledby': labelId }}
+                    />
+                  </TableCell>
+                  <TableCell component="th" id={labelId} scope="row" padding="none">
+                    <p style={{width: '12rem', overflowX: 'wrap', wordWrap: 'break-word'}}>{row.name}</p>
+                  </TableCell>
+                  <TableCell padding="none" align="left"><p style={{width: '10rem', overflowX: 'wrap', wordWrap: 'break-word'}}>{row.author}</p></TableCell>
+                  <TableCell padding="none" align="left"><p style={{width: '9rem', overflowX: 'wrap', wordWrap: 'break-word'}}>{row.lastPlayed}</p></TableCell>
+                  <TableCell padding="none" align="left"><p style={{width: '2rem', overflowX: 'wrap', wordWrap: 'break-word'}}>{row.popularity}</p></TableCell>
+                </TableRow>
+              );
+            })}
+          {emptyRows > 0 && (
+            <TableRow >
+              <TableCell colSpan={6} />
             </TableRow>
-          );
-        })}
-      {emptyRows > 0 && (
-        <TableRow >
-          <TableCell colSpan={6} />
-        </TableRow>
-      )}
-    </TableBody>
-  </Table>
-</TableContainer>)
+          )}
+        </TableBody>
+      </Table> : null}
+    </TableContainer>)
+
+  const recentTrackTable = (
+    (        
+      <TableContainer style={{overflow: 'scroll', height: '80%'}}>
+      {render ? <Table
+        className={classes.table}
+        aria-labelledby="tableTitle"
+        size='small'
+        aria-label="enhanced table"
+        stickyHeader
+        style={{tableLayout: 'auto'}}
+      >
+        <EnhancedTableHead
+          classes={classes}
+          numSelected={selected.length}
+          order={order}
+          orderBy={orderBy}
+          onSelectAllClick={handleSelectAllClick}
+          onRequestSort={handleRequestSort}
+          rowCount={rows.length}
+          renderTable={pageRender}
+        />
+        <TableBody>
+          {stableSort(rows, getComparator(order, orderBy))
+            .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+            .map((row, index) => {
+              const isItemSelected = isSelected(row.name);
+              const labelId = `enhanced-table-checkbox-${index}`;
+
+              return (
+                <TableRow
+                  hover
+                  onClick={(event) => handleClick(event, row.name)}
+                  role="checkbox"
+                  aria-checked={isItemSelected}
+                  tabIndex={-1}
+                  key={row.name}
+                  selected={isItemSelected}
+                >
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      checked={isItemSelected}
+                      inputProps={{ 'aria-labelledby': labelId }}
+                    />
+                  </TableCell>
+                  <TableCell component="th" id={labelId} scope="row" padding="none">
+                    <p style={{width: '12rem', overflowX: 'wrap', wordWrap: 'break-word'}}>{row.name}</p>
+                  </TableCell>
+                  <TableCell padding="none" align="left"><p style={{width: '10rem', overflowX: 'wrap', wordWrap: 'break-word'}}>{row.author}</p></TableCell>
+                  <TableCell padding="none" align="left"><p style={{width: '9rem', overflowX: 'wrap', wordWrap: 'break-word'}}>{row.lastPlayed}</p></TableCell>
+                </TableRow>
+              );
+            })}
+          {emptyRows > 0 && (
+            <TableRow >
+              <TableCell colSpan={5} />
+            </TableRow>
+          )}
+        </TableBody>
+      </Table> : null}
+    </TableContainer>)
+  )
 
   return (
       <Paper elevation={8} className={classes.paper}>
-        <Switcher numSelected={selected.length}/>
-        {trackTable}
+        <Switcher 
+          numSelected={selected.length} 
+          pageRender={pageRender}
+          onChangeClick={tabChangeHandler}
+        />
+        {
+          pageRender === 1 ? trackTable: recentTrackTable 
+        }
         <TablePagination
           rowsPerPageOptions={[5, 6,7,8,9, 10,15,20]}
           component="div"

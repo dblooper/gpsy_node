@@ -1,8 +1,9 @@
 import React from 'react';
 import { fade, makeStyles, useTheme } from '@material-ui/core/styles';
-import SideDrawer from './drawer/SideDrawer'
-import Navbar from './navbar/Navbar'
-import Grid from './grid/Grid'
+import SideDrawer from '../../components/drawer/SideDrawer'
+import Navbar from '../../components/navbar/Navbar'
+import Grid from '../tracks/grid/Grid'
+import {useSelector} from 'react-redux';
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -20,6 +21,7 @@ const useStyles = makeStyles((theme) => ({
 export default function Dashboard(props) {
   const classes = useStyles();
   const [mobileOpen, setMobileOpen] = React.useState(props.open);
+  const user = useSelector(state => state.logged);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -30,9 +32,6 @@ export default function Dashboard(props) {
       <Navbar handleDrawerToggle={handleDrawerToggle}></Navbar>
       <div className={classes.trackContent}>
         <SideDrawer
-          username='Daniel'
-          dateFrom={new Date().toISOString().substring(0,10)} 
-          spotifyUrl='/sdfhg.com'
           handleDrawerToggle={handleDrawerToggle} mobileOpen={mobileOpen}></SideDrawer>
         {/* <div>Hello world</div> */}
         <Grid></Grid>

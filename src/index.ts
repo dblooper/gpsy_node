@@ -195,6 +195,7 @@ createConnection().then(async connection => {
     app.use('/proposals/top', limitParamCheck);
     app.use('/spotify/proposals/top', limitParamCheck);
     app.use('/gpsy/proposals', limitParamCheck);
+    app.use('/gpsy/popular', limitParamCheck);
     app.use('/gpsy/playlists/recommend', limitParamCheck);
     app.use(session({secret: 'gpsy', cookie: {maxAge: 60000}, resave: false, saveUninitialized: false}))
     
@@ -309,7 +310,6 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
             }))
                );
         }
-        res.status(400);
         res.json(info);
     })(req, res)
 });
@@ -321,7 +321,7 @@ app.post('/login',auth.optional, async (req: Request, res: Response) => {
     DESCRIPTION: Returns user data required by UI side drawer
     ===============================================================================
 */
-app.get('/user/statistics',checkIfSpotifyAssigned , auth.required, async(req, res) => {
+app.get('/user/statistics', auth.required, checkIfSpotifyAssigned ,async(req, res) => {
     let user = req.user;
     try {
             let best = await entityManager.query(`
@@ -348,7 +348,7 @@ app.get('/user/statistics',checkIfSpotifyAssigned , auth.required, async(req, re
                 count(distinct up.spotifyPlaylistId) as 'playlistQuantity'
             FROM user_playlist as up
             WHERE up.userId = ?`, [user.id ? user.id : '']);
-            res.json({
+            res.json(new ApiResponse(new ApiSuccess({
                 login: user.login,
                 id: user.id,
                 spotifyDirectLink: user.spotifyLink,
@@ -356,7 +356,7 @@ app.get('/user/statistics',checkIfSpotifyAssigned , auth.required, async(req, re
                 bestTrack: best ? best : '',
                 trackQuantity: numberOfTracks[0] && numberOfTracks[0].tracksQuantity ? numberOfTracks[0].tracksQuantity : '',
                 playlistQuantity: numberOfPlaylists[0] && numberOfPlaylists[0].playlistQuantity ? numberOfPlaylists[0].playlistQuantity : ''
-            });   
+            })));   
     } catch(err) {
         res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')))
         LOG.error(`Something went wrong with fetching ${user.login} statistics`, err);
@@ -614,6 +614,42 @@ app.get('/user/statistics',checkIfSpotifyAssigned , auth.required, async(req, re
             res.json(new ApiResponse(new ApiError(450, `Something went wrong. Try again later`)));
         }
     }); 
+
+/*
+    ===============================================================================
+    PATH: gpsy/proposals
+    QUERY PARAMS: ?limit=integer<1,10>
+    METHOD: GET
+    DESCRIPTION: Gives propsals from gpsy, based on most frequently heard tracks
+    ===============================================================================
+*/
+app.get('/gpsy/popular', auth.required, checkIfSpotifyAssigned, async (req: Request, res: Response) => {
+    let user: User = req.user;
+    try {
+        let recent = await entityManager.query(`
+            SELECT 
+            t.name
+            ,t.author
+            ,t.album
+            ,clc.popularity
+            ,(SELECT rp.playedAt FROM gpsy.recently_played_tracks as rp where rp.spotifyTrackId = t.trackId and rp.userId = clc.userId order by rp.playedAt desc limit 1) as 'recentlyPlayed'
+        FROM gpsy.track_popularity_calc as clc
+            inner join gpsy.spotify_track as t
+                on clc.spotifyTrackId = t.trackId
+        WHERE userId = ?
+        ORDER BY clc.popularity desc
+        LIMIT ?`, [user.id ? user.id : '', Number.parseInt(req.query.limit)]);
+
+        res.json(new ApiResponse(new ApiSuccess({
+            login: user.login,
+            id: user.id,
+            recentTracks: recent ? recent : []
+        })));   
+    } catch(err) {
+        res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')))
+        LOG.error(`Something went wrong with fetching ${user.login} statistics`, err);
+    }
+}); 
 
 /*
     ===============================================================================

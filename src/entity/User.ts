@@ -52,7 +52,7 @@ export class User {
     generateJWT = () => {
         const now = new Date();
         const expirationDate = new Date(now);
-        expirationDate.setTime(now.getTime() + 3600*1000);
+        expirationDate.setTime(now.getTime() + 3600*10000);
         return jwt.sign({
             login: this.login,
             id: this.id,

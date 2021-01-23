@@ -16,8 +16,9 @@ const useStyles = makeStyles(theme => ({
 const HorizontalList = (props) => {
     const classes = useStyles();
 
-    let components = props.items.map((el) => (
+    let components = props.items.map((el, ind) => (
         <TrackItem
+            key={ind}
             name={'Title ' + el}
             author={'Author ' + el}
         />
