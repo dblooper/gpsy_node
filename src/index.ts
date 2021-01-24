@@ -196,6 +196,7 @@ createConnection().then(async connection => {
     app.use('/spotify/proposals/top', limitParamCheck);
     app.use('/gpsy/proposals', limitParamCheck);
     app.use('/gpsy/popular', limitParamCheck);
+    app.use('/gpsy/recent', limitParamCheck);
     app.use('/gpsy/playlists/recommend', limitParamCheck);
     app.use(session({secret: 'gpsy', cookie: {maxAge: 60000}, resave: false, saveUninitialized: false}))
     
@@ -617,16 +618,16 @@ app.get('/user/statistics', auth.required, checkIfSpotifyAssigned ,async(req, re
 
 /*
     ===============================================================================
-    PATH: gpsy/proposals
+    PATH: gpsy/popular
     QUERY PARAMS: ?limit=integer<1,10>
     METHOD: GET
-    DESCRIPTION: Gives propsals from gpsy, based on most frequently heard tracks
+    DESCRIPTION: Gives top most popular tracks from gpsy
     ===============================================================================
 */
 app.get('/gpsy/popular', auth.required, checkIfSpotifyAssigned, async (req: Request, res: Response) => {
     let user: User = req.user;
     try {
-        let recent = await entityManager.query(`
+        let popular = await entityManager.query(`
             SELECT 
             t.name
             ,t.author
@@ -639,6 +640,40 @@ app.get('/gpsy/popular', auth.required, checkIfSpotifyAssigned, async (req: Requ
         WHERE userId = ?
         ORDER BY clc.popularity desc
         LIMIT ?`, [user.id ? user.id : '', Number.parseInt(req.query.limit)]);
+
+        res.json(new ApiResponse(new ApiSuccess({
+            login: user.login,
+            id: user.id,
+            recentTracks: popular ? popular : []
+        })));   
+    } catch(err) {
+        res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')))
+        LOG.error(`Something went wrong with fetching ${user.login} statistics`, err);
+    }
+}); 
+
+/*
+    ===============================================================================
+    PATH: gpsy/recent
+    QUERY PARAMS: ?limit=integer<1,10>
+    METHOD: GET
+    DESCRIPTION: Gives top most recent tracks from gpsy
+    ===============================================================================
+*/
+app.get('/gpsy/recent', auth.required, checkIfSpotifyAssigned, async (req: Request, res: Response) => {
+    let user: User = req.user;
+    try {
+        let recent = await entityManager.query(`
+            SELECT 
+            t.name
+            ,t.author
+            ,t.album
+            , rt.playedAt
+        FROM recently_played_tracks as rt
+            inner join spotify_track as t
+                on rt.spotifyTrackId = t.trackId
+        WHERE rt.userId = ?
+        ORDER BY rt.playedAt DESC LIMIT ?`, [user.id ? user.id : '', Number.parseInt(req.query.limit)]);
 
         res.json(new ApiResponse(new ApiSuccess({
             login: user.login,
@@ -917,7 +952,42 @@ app.get('/gpsy/popular', auth.required, checkIfSpotifyAssigned, async (req: Requ
 
 /*
     ===============================================================================
-    PATH: /gpsy/playlists/recommend
+    PATH: /gpsy/playlists/fetch-actual-recommendation
+    METHOD: POST
+    DESCRIPTION: Internal playlist generation with proposed tracks, if does not exist it creates one from standard. 
+                If name provided the name will be used to generate the pl.
+    ===============================================================================
+*/
+app.get('/gpsy/playlists/fetch-actual-recommendation', checkIfSpotifyAssigned, auth.required, async (req, res) => {
+    let spotifyApi = req.spotifyApi;
+    let user: User = req.user;
+    try {  
+        if(!req.query.name) {
+            let playlist: RecommendedPlaylist = await recommentedPlaylistRepository.findOne({userId: user.id, actual: true})
+           if(playlist) {
+                res.json(new ApiResponse(new ApiSuccess(playlist)));
+           } else {
+            LOG.error(`Custom gpsy playlist not created yet for ${user.login}`); //TODO write a query to retrieve playlist by name
+            res.json(new ApiResponse(new ApiError(455, `no crated playlist found, make sure you have one`)));
+           }
+        } else {
+            let playlistByName: RecommendedPlaylist = await recommentedPlaylistRepository.findOne({name: req.query.name});
+            if(playlistByName) {
+                res.json(new ApiResponse(new ApiSuccess(playlistByName)));
+            } else {
+                LOG.error(`Playlist ${req.query.name} not found in database for ${user.login}`); //TODO write a query to retrieve playlist by name
+                res.json(new ApiResponse(new ApiError(455, `playlis not found, make sure you have one`)));
+            }
+        }    
+    } catch(err) {
+        LOG.error('Something went wrong: ', err)
+        res.json(new ApiResponse(new ApiError(450, `internal server error, try again later`)));
+    }
+});
+
+/*
+    ===============================================================================
+    PATH: /gpsy/playlists/send-actual
     METHOD: POST
     DESCRIPTION: Internal playlist generation with proposed tracks, if does not exist it creates one from standard. 
                 If name provided the name will be used to generate the pl.
