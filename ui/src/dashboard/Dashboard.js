@@ -1,8 +1,8 @@
 import React from 'react';
 import { fade, makeStyles, useTheme } from '@material-ui/core/styles';
-import SideDrawer from '../../components/drawer/SideDrawer'
-import Navbar from '../../components/navbar/Navbar'
-import Grid from '../tracks/grid/Grid'
+import SideDrawer from '../components/drawer/SideDrawer'
+import Navbar from '../components/navbar/Navbar'
+import Grid from './tracks/grid/Grid'
 import {useSelector} from 'react-redux';
 
 const useStyles = makeStyles((theme) => ({

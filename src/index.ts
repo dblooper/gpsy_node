@@ -638,13 +638,13 @@ app.get('/gpsy/popular', auth.required, checkIfSpotifyAssigned, async (req: Requ
             inner join gpsy.spotify_track as t
                 on clc.spotifyTrackId = t.trackId
         WHERE userId = ?
-        ORDER BY clc.popularity desc
+        ORDER BY clc.popularity desc, 'recentlyPlayed' desc
         LIMIT ?`, [user.id ? user.id : '', Number.parseInt(req.query.limit)]);
 
         res.json(new ApiResponse(new ApiSuccess({
             login: user.login,
             id: user.id,
-            recentTracks: popular ? popular : []
+            popularTracks: popular ? popular : []
         })));   
     } catch(err) {
         res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')))
@@ -679,6 +679,54 @@ app.get('/gpsy/recent', auth.required, checkIfSpotifyAssigned, async (req: Reque
             login: user.login,
             id: user.id,
             recentTracks: recent ? recent : []
+        })));   
+    } catch(err) {
+        res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')))
+        LOG.error(`Something went wrong with fetching ${user.login} statistics`, err);
+    }
+}); 
+
+/*
+    ===============================================================================
+    PATH: gpsy/raising
+    QUERY PARAMS: ?limit=integer<1,10>
+    METHOD: GET
+    DESCRIPTION: Gives top most recent tracks from gpsy
+    ===============================================================================
+*/
+app.get('/gpsy/raising', auth.required, checkIfSpotifyAssigned, async (req: Request, res: Response) => {
+    let user: User = req.user;
+    try {
+        let popular = await entityManager.query(`
+        SELECT 
+        t.name
+        ,t.author
+        ,t.album
+        ,(select 
+                rt2.playedAt 
+            from gpsy.recently_played_tracks as rt2 
+            where rt2.spotifyTrackId = rt.spotifyTrackId 
+            and rt2.userId = rt.userId 
+            limit 1) as 'recentlyPlayed'
+            ,count(t.trackId) as 'popularity'
+    FROM gpsy.recently_played_tracks as rt
+        inner join gpsy.spotify_track as t
+            on rt.spotifyTrackId = t.trackId
+    WHERE rt.userId = ?
+    AND rt.playedAt BETWEEN DATE_ADD(NOW(), INTERVAL -7 DAY) AND NOW()
+    GROUP BY
+        t.name,
+        t.author,
+        t.album,
+        rt.userId,
+        rt.spotifyTrackId
+    ORDER BY count(t.trackId) desc, recentlyPlayed desc
+    LIMIT ?`, [user.id ? user.id : '', Number.parseInt(req.query.limit)]);
+
+        res.json(new ApiResponse(new ApiSuccess({
+            login: user.login,
+            id: user.id,
+            raisingTracks: popular ? popular : []
         })));   
     } catch(err) {
         res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')))

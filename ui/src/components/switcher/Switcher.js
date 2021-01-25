@@ -34,10 +34,6 @@ const useStyles = makeStyles(theme => ({
 
 export default function CenteredTabs(props) {
   const classes = useStyles();
-  // const handleChange = (event, newValue) => {
-  //   setValue(newValue);
-  // };
-
   const[selected, setSelected] = React.useState(false);
 
   useEffect(() => {
@@ -66,7 +62,7 @@ export default function CenteredTabs(props) {
           >
           <Tab label="Ostatnio grane" />
           <Tab label="Najpopularniejsze" />
-          <Tab label="Gwiazdy" />
+          <Tab label="Wschodzące" />
         </Tabs>)}
     </Paper>
   );

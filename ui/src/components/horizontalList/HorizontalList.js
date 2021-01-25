@@ -19,8 +19,8 @@ const HorizontalList = (props) => {
     let components = props.items.map((el, ind) => (
         <TrackItem
             key={ind}
-            name={'Title ' + el}
-            author={'Author ' + el}
+            name={el.name}
+            author={el.author}
         />
     ))
 
