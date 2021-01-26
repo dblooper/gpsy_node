@@ -33,7 +33,6 @@ export default function Dashboard(props) {
       <div className={classes.trackContent}>
         <SideDrawer
           handleDrawerToggle={handleDrawerToggle} mobileOpen={mobileOpen}></SideDrawer>
-        {/* <div>Hello world</div> */}
         <Grid></Grid>
         </div>
     </div>

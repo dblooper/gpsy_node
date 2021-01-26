@@ -1,3 +1,4 @@
+import { type } from 'os';
 import {Column, CreateDateColumn, Entity, PrimaryColumn, Unique, UpdateDateColumn} from 'typeorm'
 
 @Entity()
@@ -10,7 +11,7 @@ export class GenresPopularityCalc {
     @PrimaryColumn()
     genre: string;
 
-    @Column()
+    @Column({type: 'decimal', precision: 20, scale: 3 })
     genrePopularity: number;
 
     @CreateDateColumn()

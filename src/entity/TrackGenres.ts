@@ -2,7 +2,7 @@
 import {Entity, Column, PrimaryColumn, CreateDateColumn} from 'typeorm'
 
 @Entity()
-export class TrackGeneres {
+export class TrackGenres {
 
     @PrimaryColumn()
     trackId: string;

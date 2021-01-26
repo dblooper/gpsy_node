@@ -1,6 +1,6 @@
 import { SpecialCasesHandler } from "../config/SpecialCasesHandler";
 import { SpotifyTrack } from "../entity/SpotifyTrack";
-import { TrackGeneres } from "../entity/TrackGenres";
+import { TrackGenres } from "../entity/TrackGenres";
 import { User } from "../entity/User";
 import { UserPlaylist } from "../entity/UserPlaylist";
 import { SpotifyPlaylistRequestService } from "../service/SpotifyPlaylistRequestService";
@@ -23,7 +23,7 @@ export class Scheduler {
     private static LOG_DATE = new Date();
 
     static scheduleTokenAndRecetTracks = async (recentTracksRepository, userRepository,spotifyTracksRepository, userPlaylistRepository, apiInstances: Map<String, [any, Date, Date, Date]>, recommendationService, connection) => {
-        let generesRepository = connection.getRepository(TrackGeneres);
+        let generesRepository = connection.getRepository(TrackGenres);
         let schedulingFunction = async () => {
             if(!await SpecialCasesHandler.hasInternetConnection()) {
                 console.error(`[${new Date().toISOString()}] SCHEDULER: No internet connection!`);

@@ -5,13 +5,12 @@ import { Typography } from '@material-ui/core';
 
 const useStyles = makeStyles(theme => ({
     main: {
-        margin: theme.spacing(1)
-    },
-    horizontal: {
+        padding: '0.1rem',
+        boxSizing: 'border-box',
+        width: '100%',
         display: 'flex',
-        flexDirection: 'row',
-        overflowX: 'auto'
-    }
+        overflow: 'auto'
+    },
 }))
 const HorizontalList = (props) => {
     const classes = useStyles();
@@ -21,14 +20,13 @@ const HorizontalList = (props) => {
             key={ind}
             name={el.name}
             author={el.author}
+            index={ind + 1}
         />
     ))
 
     return (
         <div className={classes.main}>
-            <div className={classes.horizontal} >
-                {components}
-            </div>
+            {components}
         </div>
     )
 }

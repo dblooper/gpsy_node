@@ -142,6 +142,11 @@ const Login = () => {
                     variant="outlined"
                     className={[classes.inputText, classes.passwordField].join(' ')}
                     onChange = {(event) =>  handleChange(event)}
+                    onKeyPress= {(e) => {
+                        if (e.key === 'Enter') {
+                            summitLoggin();
+                        }
+                    }}
 
                 />
                 <div style={{maxHeight: "40px", height: '30px', textAlign: 'center'}}>
@@ -155,7 +160,18 @@ const Login = () => {
                     control={<Checkbox checked={state.remeber} onChange={handleChange} name="remeber" />}
                     label="Zapamiętaj mnie"
                 />
-                <Button color="primary" variant="outlined" style={{width: '80%'}} onClick={summitLoggin}>Login</Button>
+                <Button 
+                    focus
+                    color="primary" 
+                    variant="outlined" 
+                    style={{width: '80%'}} 
+                    onClick={summitLoggin}
+                    onKeyPress= {(e) => {
+                        if (e.key === 'Enter') {
+                          summitLoggin();
+                        }
+                    }}
+                >Login</Button>
                 <Typography variant="p">Nie masz jeszcze konta? <Button color="primary" onClick={() => history.replace("/register")}>Zarejestruj</Button></Typography>
                 <div style={{height: "20px", width: '90%'}}>
                     {loading ? <ProgressBar className={classes.progress}></ProgressBar> : null}

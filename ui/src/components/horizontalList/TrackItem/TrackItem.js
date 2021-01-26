@@ -9,33 +9,46 @@ const useStyles = makeStyles(theme => ({
         padding: theme.spacing(2),
       },
     paper: {
-        minWidth: '180px',
+        boxSizing: 'border-box',
+        maxHeight: '100%',
         display: 'flex',
+        position: 'relative',
         flexDirection: 'row',
-        margin: theme.spacing(1),
-        padding: theme.spacing(2)
+        padding: theme.spacing(2),
     },
     fab: {
-        margin: theme.spacing(2),
+        boxSizing: 'border-box',
+        padding: theme.spacing(1),
+        minWidth: '250px',
+        maxHeight: '105px',
       },
-      absolute: {
-        position: 'absolute',
-        bottom: theme.spacing(2),
-        right: theme.spacing(3),
-      },
+    bkgNumber: {
+        margin: '0', 
+        padding: '0', 
+        top: '0', 
+        fontSize: '5rem', 
+        fontWeight: 'bold', 
+        position: 'absolute', 
+        opacity: '0.5',
+        color: theme.palette.secondary.dark,
+        zIndex: 0
+    }
 }))
 
 const TrackItem = (props) => {
     const classes = useStyles();
     
     return (
-        <Paper elevation={10} className={classes.paper}>
-            <div style={{width: '80%'}}>
-                <Typography variant="subtitle1">{props.name}</Typography>
-                <Typography variant="subtitle2">{props.author}</Typography>
-            </div>
-            <Popper/>
-        </Paper>
+        <div className={classes.fab}>
+            <Paper elevation={10} className={classes.paper}>
+                <Typography variant="h2" className={classes.bkgNumber}>{props.index}</Typography>
+                <div style={{zIndex: '10', width: '80%', display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
+                    <Typography variant="caption" style={{fontWeight: 'bold'}}>{props.name}</Typography>
+                    <Typography variant="caption">{props.author}</Typography>
+                </div>
+                <Popper/>
+            </Paper>
+        </div>
     )
 }
 

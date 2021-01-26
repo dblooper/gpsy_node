@@ -19,7 +19,7 @@ const useStyles = makeStyles((theme) => ({
         display: 'flex',
         flexWrap: 'wrap',
         justifyContent: 'space-around',
-        overflow: 'hidden',
+        overflow: 'auto',
         backgroundColor: theme.palette.background.paper,
     },
     gridList: {
@@ -27,12 +27,13 @@ const useStyles = makeStyles((theme) => ({
         maxHeight: '100%',
     },
     gridTile: {
-        //border: '1px solid green',
+        // border: '1px solid green',
         display: 'flex',
         width: '100%',
         flexDirection: 'column',
         justifyContent: 'center',
-        //padding: theme.spacing(1) ,
+        // margin: theme.spacing(1),
+        padding: theme.spacing(1) ,
         overflow: 'auto'
     },
     content: {
@@ -51,29 +52,73 @@ export default function Grid(props) {
     const userMeta = useSelector(state => state.logged);
     const [renderGpsyProposals, setRenderGpsyProposals] = React.useState(false);
     const [gpsyProposals, setGpsyProposals] = React.useState([]);
+    const [renderSpotifyProposals, setRenderSpotifyProposals] = React.useState(false);
+    const [spotifyProposals, setSpotifyProposals] = React.useState([]);
+    const [genres, setGenres] = React.useState([]);
+
     useEffect(() => {
         axios.get('/gpsy/proposals?limit=20',
-    {headers: {
-      Authorization: 'Bearer ' + userMeta.token //the token is a variable which holds the token
-    }},
-    {
-      cancelToken: cancelTokenSource.token
-    }
-    )
-    .then(data => {
-      let newRows = [];
-      for(let el of data.data.info.data) {
-        newRows.push({spotifyTrackId: el.trackId, name: el.name, author: el.author})
-      }
-      setGpsyProposals(newRows);
-      setRenderGpsyProposals(true);
-    })
-    .catch(err => {
-      console.log(err)
-    })
-    return () => {
-      cancelTokenSource.cancel();
-    }
+            {headers: {
+                Authorization: 'Bearer ' + userMeta.token //the token is a variable which holds the token
+            }},
+            {
+                cancelToken: cancelTokenSource.token
+            }
+            )
+        .then(data => {
+            let newRows = [];
+            for(let el of data.data.info.data) {
+                newRows.push({spotifyTrackId: el.trackId, name: el.name, author: el.author})
+            }
+            setGpsyProposals(newRows);
+            setRenderGpsyProposals(true);
+        })
+        .catch(err => {
+            console.log(err)
+        })
+
+        axios.get('/spotify/proposals?limit=20',
+            {headers: {
+                Authorization: 'Bearer ' + userMeta.token //the token is a variable which holds the token
+            }},
+            {
+                cancelToken: cancelTokenSource.token
+            }
+            )
+        .then(data => {
+            let newRows = [];
+            for(let el of data.data.info.data) {
+                newRows.push({spotifyTrackId: el.trackId, name: el.name, author: el.author})
+            }
+            setSpotifyProposals(newRows);
+            setRenderSpotifyProposals(true);
+            })
+        .catch(err => {
+            console.log(err)
+        })
+
+        axios.get('/gpsy/user/genres',
+            {headers: {
+                Authorization: 'Bearer ' + userMeta.token //the token is a variable which holds the token
+            }},
+            {
+                cancelToken: cancelTokenSource.token
+            }
+            )
+        .then(data => {
+            let newRows = [];
+            for(let el of data.data.info.data.genres) {
+                newRows.push({name: el.name, percent: el.popularityPercent})
+            }
+            setGenres(newRows);
+            })
+        .catch(err => {
+            console.log(err)
+        })
+        
+        return () => {
+            cancelTokenSource.cancel();
+        }
     }, [userMeta])
 
     return (
@@ -84,16 +129,16 @@ export default function Grid(props) {
                         <Typography variant="h5" className={classes.typo}>Rekomendowane przez Gpsy</Typography>
                         <HorizontalList items={gpsyProposals}></HorizontalList>
                     </GridListTile>
-                    <GridListTile cols={1} rows={7} className={classes.gridTile}>
+                    <GridListTile cols={1} rows={8} className={classes.gridTile}>
                         <Typography variant="h5" className={classes.typo}>Moje gatunki</Typography>
-                        <Doughnut></Doughnut>
+                        <Doughnut data={genres}></Doughnut>
                     </GridListTile>
                     <GridListTile cols={2} rows={8} className={classes.gridTile}>
                         <MainTable></MainTable>
                     </GridListTile>
                     <GridListTile cols={3} rows={2} className={classes.gridTile}>
-                        <Typography variant="h5" className={classes.typo}>Spotify recommendation</Typography>
-                        <HorizontalList items={[1,2,3,4,5,6]}></HorizontalList>
+                        <Typography variant="h5" className={classes.typo}>Rekomendowane przez spotify</Typography>
+                        <HorizontalList items={spotifyProposals}></HorizontalList>
                     </GridListTile>
                     <GridListTile cols={1} className={classes.gridTile}> <p>Hello world</p>
                     </GridListTile>

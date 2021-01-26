@@ -23,6 +23,7 @@ import { PassportConfig } from "./config/PassportConfig";
 import { SpotifyPlaylistRequestService } from "./service/SpotifyPlaylistRequestService";
 import {factory} from './config/LoggerConfig'
 import cors from 'cors'
+import { GenresPopularityCalc } from "./entity/GenresPopularityCalc";
 const LOG = factory.getLogger("index.Main");
 const passport = require('passport');
 
@@ -157,6 +158,7 @@ createConnection().then(async connection => {
     const recentTracksRepository = connection.getRepository(RecentlyPlayedTracks);
     const userPlaylistRepository = connection.getRepository(UserPlaylist);
     const recommentedPlaylistRepository = connection.getRepository(RecommendedPlaylist);
+    const genresRepository = connection.getRepository(GenresPopularityCalc);
     const entityManager = getManager();
     const recommendationService = new RecommendationService(entityManager);
 
@@ -184,7 +186,7 @@ createConnection().then(async connection => {
             }     
         } catch(err) {
             res.status(500);
-            res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')));
+            res.json(new ApiResponse(new ApiError(550, 'internal server error, try again later')));
             LOG.error('Error with checking spotify assigned account', err)
         }
     }
@@ -359,7 +361,7 @@ app.get('/user/statistics', auth.required, checkIfSpotifyAssigned ,async(req, re
                 playlistQuantity: numberOfPlaylists[0] && numberOfPlaylists[0].playlistQuantity ? numberOfPlaylists[0].playlistQuantity : ''
             })));   
     } catch(err) {
-        res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')))
+        res.json(new ApiResponse(new ApiError(550, 'internal server error, try again later')))
         LOG.error(`Something went wrong with fetching ${user.login} statistics`, err);
     }
 })
@@ -479,6 +481,36 @@ app.get('/user/statistics', auth.required, checkIfSpotifyAssigned ,async(req, re
                 });
     });
 
+
+/*
+    ===============================================================================
+    PATH: /gpsy/user/genres
+    METHOD: GET
+    DESCRIPTION: Gives propsals from gpsy, based on most frequently heard tracks
+    ===============================================================================
+*/
+app.get('/gpsy/user/genres', checkIfSpotifyAssigned, auth.required, async (req, res) => {
+    const user: User = req.user;
+    genresRepository.find({userId: user.id})
+    .then(data => {
+        const mappedData = data.map(el => ({
+            name: el.genre,
+            popularityPercent: el.genrePopularity,
+            lastUpdated: el.updateDate
+        }));
+        res.json(new ApiResponse(new ApiSuccess(
+            {
+                login: user.login,
+                id: user.id,
+                genres: mappedData})));
+    })
+    .catch(err => {
+        LOG.error('Something went wrong!', err);
+        res.json(new ApiResponse(new ApiError(550, `internal server error`)));
+    })
+});
+
+
 /*
     ===============================================================================
     PATH: /spotify/played/now
@@ -513,13 +545,13 @@ app.get('/user/statistics', auth.required, checkIfSpotifyAssigned ,async(req, re
 
 /*
     ===============================================================================
-    PATH: /spotify/proposals/top
+    PATH: /spotify/top-tracks
     QUERY PARAMS: ?limit=integer<1,10>
     METHOD: GET
     DESCRIPTION: Gives propsals from gpsy, based on most frequently heard tracks
     ===============================================================================
 */
-    app.get('/spotify/proposals/top', checkIfSpotifyAssigned, auth.required, async(req, res) => {
+    app.get('/spotify/top-tracks', checkIfSpotifyAssigned, auth.required, async(req, res) => {
         let spotifyApi = req.spotifyApi;
         spotifyApi
                 .getMyTopTracks({limit: req.query.limit})
@@ -580,12 +612,12 @@ app.get('/user/statistics', auth.required, checkIfSpotifyAssigned ,async(req, re
                         min_energy: 0.4,
                         seed_tracks: mostFrequent,
                         limit: req.query.limit,
-                        min_popularity: 60
+                        min_popularity: 50
                     })
                 .then(function(data) {
                     let recommendations = data.body.tracks;
                     res.json(new ApiResponse(new ApiSuccess(recommendations.map(el => {
-                                                                return {id: el.id, 
+                                                                return {trackId: el.id, 
                                                                         name: el.name, 
                                                                         author: el.artists[0].name, 
                                                                         album: el.album.name
@@ -647,7 +679,7 @@ app.get('/gpsy/popular', auth.required, checkIfSpotifyAssigned, async (req: Requ
             popularTracks: popular ? popular : []
         })));   
     } catch(err) {
-        res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')))
+        res.json(new ApiResponse(new ApiError(550, 'internal server error, try again later')))
         LOG.error(`Something went wrong with fetching ${user.login} statistics`, err);
     }
 }); 
@@ -681,7 +713,7 @@ app.get('/gpsy/recent', auth.required, checkIfSpotifyAssigned, async (req: Reque
             recentTracks: recent ? recent : []
         })));   
     } catch(err) {
-        res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')))
+        res.json(new ApiResponse(new ApiError(550, 'internal server error, try again later')))
         LOG.error(`Something went wrong with fetching ${user.login} statistics`, err);
     }
 }); 
@@ -729,7 +761,7 @@ app.get('/gpsy/raising', auth.required, checkIfSpotifyAssigned, async (req: Requ
             raisingTracks: popular ? popular : []
         })));   
     } catch(err) {
-        res.json(new ApiResponse(new ApiError(12, 'internal server error, try again later')))
+        res.json(new ApiResponse(new ApiError(550, 'internal server error, try again later')))
         LOG.error(`Something went wrong with fetching ${user.login} statistics`, err);
     }
 }); 
@@ -832,7 +864,7 @@ app.get('/gpsy/raising', auth.required, checkIfSpotifyAssigned, async (req: Requ
             }
         } catch(err) {
             LOG.error(`User ${user.login} tracks retrieve from playlist internal error`, err);
-            res.json(new ApiResponse(new ApiError(455, `internal server error, try again later`)));  
+            res.json(new ApiResponse(new ApiError(550, `internal server error, try again later`)));  
        }
     });
 
@@ -867,7 +899,7 @@ app.get('/gpsy/raising', auth.required, checkIfSpotifyAssigned, async (req: Requ
                 res.json(response);
         } catch(err) {
             LOG.error(`User ${user.login} tracks add internal error`, err)
-            res.json(new ApiResponse(new ApiError(450, `internal server error, try again later`)));
+            res.json(new ApiResponse(new ApiError(550, `internal server error, try again later`)));
         }
     });
 
@@ -904,7 +936,7 @@ app.get('/gpsy/raising', auth.required, checkIfSpotifyAssigned, async (req: Requ
                 }
             } catch(err) {
                 LOG.error(`User ${user.login} Cannot add the playlist properly`, err);
-                res.json(new ApiResponse(new ApiError(455, `internal server error, try again later`)));
+                res.json(new ApiResponse(new ApiError(550, `internal server error, try again later`)));
             }
     });
 
@@ -1029,7 +1061,7 @@ app.get('/gpsy/playlists/fetch-actual-recommendation', checkIfSpotifyAssigned, a
         }    
     } catch(err) {
         LOG.error('Something went wrong: ', err)
-        res.json(new ApiResponse(new ApiError(450, `internal server error, try again later`)));
+        res.json(new ApiResponse(new ApiError(550, `internal server error, try again later`)));
     }
 });
 
@@ -1125,7 +1157,7 @@ app.get('/gpsy/playlists/fetch-actual-recommendation', checkIfSpotifyAssigned, a
                         res.json(response)
                     } catch(err) {
                         LOG.error(`User ${user.login} tracks add internal error`, err);
-                        res.json(new ApiResponse(new ApiError(455, `internal server error, try again later`)));
+                        res.json(new ApiResponse(new ApiError(550, `internal server error, try again later`)));
                     }
                 }
             } else {
@@ -1134,7 +1166,7 @@ app.get('/gpsy/playlists/fetch-actual-recommendation', checkIfSpotifyAssigned, a
             }    
         } catch(err) {
             LOG.error('Something went wrong: ', err)
-            res.json(new ApiResponse(new ApiError(450, `internal server error, try again later`)));
+            res.json(new ApiResponse(new ApiError(550, `internal server error, try again later`)));
         }
     });
 
