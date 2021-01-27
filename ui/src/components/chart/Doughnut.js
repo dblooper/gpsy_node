@@ -13,8 +13,8 @@ const Doughnut = (props) => {
     const classes = useStyles();
     let doughnut = null
     useEffect(() => {
-        let dataLocal = props.data ? props.data.map(el => el.percent).sort((a,b) => a-b) : [];
-        let labelsLocal = props.data ? props.data.map(el => el.name) : [];
+        let dataLocal = props.data ? props.data.sort((a,b) => a.percent - b.percent).map(el => el.percent) : [];
+        let labelsLocal = props.data ? props.data.sort((a,b) => a.percent - b.percent).map(el => el.name) : [];
         let context = document.getElementById('doughnut').getContext('2d');
         if(doughnut) {
             doughnut.destroy();
